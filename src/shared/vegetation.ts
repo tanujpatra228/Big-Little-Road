@@ -27,6 +27,15 @@ export const FLOWER_COLOURS = 5;
 
 const MAX_SLOPE = 0.85; // tan of the steepest slope grass grows on
 
+/** A circle kept free of plants, e.g. around a prop you need to see. */
+export interface Clearing {
+  x: number;
+  z: number;
+  r: number;
+}
+
+const inClearing = (cs: readonly Clearing[], x: number, z: number): boolean => cs.some((c) => Math.hypot(x - c.x, z - c.z) < c.r);
+
 /** True if grass can grow at this spot: on grass, above water, not too steep. */
 function grassy(terrain: Terrain, x: number, z: number): boolean {
   if (terrain.surfaceAt(x, z) !== Surface.Grass) return false;
@@ -46,7 +55,7 @@ function edgeKeep(terrain: Terrain, x: number, z: number, rand: () => number): b
 }
 
 /** Tufts of grass. Clumpy: dense lush patches and thinner ones. Deterministic per seed. */
-export function scatterGrass(terrain: Terrain, density = 4.5): Plant[] {
+export function scatterGrass(terrain: Terrain, density = 4.5, clearings: readonly Clearing[] = []): Plant[] {
   const rand = mulberry32(terrain.seed ^ 0x9a55);
   const noise = createNoise(terrain.seed ^ 0x77);
   const half = terrain.size / 2 - 8;
@@ -57,6 +66,7 @@ export function scatterGrass(terrain: Terrain, density = 4.5): Plant[] {
     const z = (rand() * 2 - 1) * half;
     const lush = 0.5 + 0.5 * noise(x * 0.09, z * 0.09, 2);
     if (rand() > 0.35 + 0.65 * lush) continue;
+    if (inClearing(clearings, x, z)) continue;
     if (!grassy(terrain, x, z)) continue;
     if (!edgeKeep(terrain, x, z, rand)) continue;
     out.push({
@@ -72,12 +82,12 @@ export function scatterGrass(terrain: Terrain, density = 4.5): Plant[] {
 }
 
 /** Flowers in clusters plus a few singles. */
-export function scatterFlowers(terrain: Terrain, clusters = 80, singles = 160): Flower[] {
+export function scatterFlowers(terrain: Terrain, clusters = 80, singles = 160, clearings: readonly Clearing[] = []): Flower[] {
   const rand = mulberry32(terrain.seed ^ 0xf10e);
   const half = terrain.size / 2 - 10;
   const out: Flower[] = [];
   const add = (x: number, z: number, colour: number): void => {
-    if (!grassy(terrain, x, z)) return;
+    if (inClearing(clearings, x, z) || !grassy(terrain, x, z)) return;
     out.push({ x, y: terrain.heightAt(x, z), z, height: 0.38 + rand() * 0.3, yaw: rand() * Math.PI * 2, colour });
   };
   for (let c = 0; c < clusters; c++) {

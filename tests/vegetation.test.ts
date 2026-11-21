@@ -36,6 +36,17 @@ describe('grass placement', () => {
   });
 });
 
+describe('clearings', () => {
+  it('keeps grass and flowers out of a cleared circle', () => {
+    const c = { x: 17, z: -6, r: 3.2 };
+    const g = scatterGrass(t, 4.5, [c]);
+    const f = scatterFlowers(t, 80, 160, [c]);
+    expect(g.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.r)).toBe(false);
+    expect(f.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.r)).toBe(false);
+    expect(grass.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.r)).toBe(true); // and there was grass there before
+  });
+});
+
 describe('flowers', () => {
   it('exist, on grass, with valid colours', () => {
     expect(flowers.length).toBeGreaterThan(300);

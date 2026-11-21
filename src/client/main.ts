@@ -16,6 +16,7 @@ import { Hud } from './ui/hud';
 import { CoopPanel, type PanelPlayer } from './ui/coop-panel';
 import { RoomClient } from './net/room-client';
 import { RemoteCar } from './net/remote-car';
+import { TetherController } from './game/tether-controller';
 import { nextPoseDelay } from '../shared/net/pose';
 import { ROOM_CODE, type PlayerInfo } from '../shared/net/protocol';
 import { TunePanel } from './ui/tune-panel';
@@ -109,18 +110,19 @@ async function boot(): Promise<void> {
 
   const refreshPanel = (): void => {
     const players: PanelPlayer[] = [...roster.values()].map((p) => ({ ...p, self: p.id === net.selfId, rtt: p.id === net.selfId ? net.rttMs : 0 }));
-    panel.render({ status: net.status, code: net.code, max: 4, players });
+    panel.render({ status: net.status, code: net.code, max: 4, players, lag: net.lagMs });
   };
   const addRemote = (p: PlayerInfo): void => {
     roster.set(p.id, p);
     if (p.id === net.selfId) return;
     const existing = remotes.get(p.id);
     if (existing) existing.setRole(p.role);
-    else remotes.set(p.id, new RemoteCar(scene, p));
+    else remotes.set(p.id, new RemoteCar(scene, pw, p));
   };
   const net: RoomClient = new RoomClient(
     {
-      welcome(id, code, list) {
+      welcome(id, code, list, props) {
+        tether.onWelcome(props);
         roster.clear();
         for (const r of remotes.values()) r.dispose();
         remotes.clear();
@@ -165,9 +167,13 @@ async function boot(): Promise<void> {
         const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
         audio.remoteHorn(rc.role, 1 / (1 + d / 18), d > 0.01 ? to.normalize().dot(right) : 0);
       },
+      prop(info) {
+        tether.onProp(info);
+      },
       ping() {},
       status() {
         if (net.status === 'off') {
+          tether.onOffline();
           for (const r of remotes.values()) r.dispose();
           remotes.clear();
           roster.clear();
@@ -177,6 +183,7 @@ async function boot(): Promise<void> {
     },
     { name: () => panel.name, role: () => role },
   );
+  const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
   const panel: CoopPanel = new CoopPanel({
     async start() {
       try {
@@ -206,6 +213,7 @@ async function boot(): Promise<void> {
     audio,
     get net() { return net; },
     remotes,
+    get tether() { return tether; },
     spawn,
   };
 
@@ -228,8 +236,15 @@ async function boot(): Promise<void> {
       if (vehicle.flippedFor >= FLIP_RESET_SECONDS || params.has('debug') || params.has('tune')) vehicle.resetUpright();
     }
 
+    // Other players' cars first, so their solid stand-ins and hitches are current for this frame.
+    for (const r of remotes.values()) r.update(performance.now(), frame);
+    if (input.wasPressed('KeyF')) tether.toggle();
+    const rope = tether.update();
+    hud.setPrompt(tether.prompt);
+
     let steps = 0;
     while (acc >= FIXED_DT && steps < 5) {
+      vehicle.pushPlanar(rope.x, rope.z, FIXED_DT);
       vehicle.step(input.read(FIXED_DT), FIXED_DT);
       pw.world.step();
       vehicle.afterPhysics();
@@ -266,8 +281,6 @@ async function boot(): Promise<void> {
         forcePose = false;
       }
     }
-    for (const r of remotes.values()) r.update(performance.now(), frame);
-
     const pose = vehicle.pose(acc / FIXED_DT);
     mesh.update(vehicle, pose, frame);
     chase.update(pose, vehicle.speed, frame);

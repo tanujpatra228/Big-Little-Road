@@ -1,11 +1,12 @@
 import type { CarRole } from '../../shared/cars';
 import { quantizePose, type PoseState } from '../../shared/net/pose';
 import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame } from '../../shared/net/protocol';
+import type { PropInfo } from '../../shared/net/props';
 
 export type NetStatus = 'off' | 'connecting' | 'on' | 'reconnecting' | 'full' | 'failed';
 
 export interface RoomHandlers {
-  welcome(id: string, code: string, players: PlayerInfo[]): void;
+  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[]): void;
   join(p: PlayerInfo): void;
   leave(id: string): void;
   /** `at` is performance.now() when the frame arrived. */
@@ -13,6 +14,7 @@ export interface RoomHandlers {
   car(id: string, role: CarRole): void;
   horn(id: string, on: boolean): void;
   ping(id: string, kind: PingKind, x: number, z: number): void;
+  prop(p: PropInfo): void;
   status(s: NetStatus): void;
 }
 
@@ -38,6 +40,9 @@ export class RoomClient {
   code = '';
   selfId = '';
   rttMs = 0;
+  /** Simulated one-way delay in ms, from ?lag=. Lets you feel a slow link on a fast one. */
+  readonly lagMs: number;
+  private readonly jitterMs: number;
 
   private ws: WebSocket | null = null;
   private readonly key = tabKey();
@@ -46,11 +51,31 @@ export class RoomClient {
   private seq = 0;
   private pingTimer: number | undefined;
   private pingSentAt = 0;
+  private lastOut = 0;
+  private lastIn = 0;
 
   constructor(
     private readonly h: RoomHandlers,
     private readonly who: { name(): string; role(): CarRole },
-  ) {}
+  ) {
+    const q = new URLSearchParams(location.search);
+    this.lagMs = Math.min(1500, Math.max(0, Number(q.get('lag')) || 0));
+    this.jitterMs = Math.min(500, Math.max(0, Number(q.get('jitter')) || 0));
+  }
+
+  /** Runs `fn` after the simulated delay, keeping messages in order. */
+  private delayed(dir: 'in' | 'out', fn: () => void): void {
+    if (this.lagMs <= 0) {
+      fn();
+      return;
+    }
+    const now = performance.now();
+    const last = dir === 'in' ? this.lastIn : this.lastOut;
+    const due = Math.max(last, now + this.lagMs + Math.random() * this.jitterMs);
+    if (dir === 'in') this.lastIn = due;
+    else this.lastOut = due;
+    window.setTimeout(fn, due - now);
+  }
 
   /** Ask the server for a fresh room code. */
   async create(): Promise<string> {
@@ -88,58 +113,17 @@ export class RoomClient {
     this.ws = ws;
 
     ws.onopen = () => {
-      ws.send(encode({ type: 'hello', name: this.who.name(), role: this.who.role(), key: this.key }));
+      this.delayed('out', () => ws.readyState === WebSocket.OPEN && ws.send(encode({ type: 'hello', name: this.who.name(), role: this.who.role(), key: this.key })));
       window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           this.pingSentAt = performance.now();
-          ws.send('ping'); // answered by the runtime without waking the room
+          this.delayed('out', () => ws.readyState === WebSocket.OPEN && ws.send('ping')); // answered by the runtime without waking the room
         }
       }, 2000);
     };
 
-    ws.onmessage = (e: MessageEvent<unknown>) => {
-      if (e.data === 'pong') {
-        this.rttMs = Math.round(performance.now() - this.pingSentAt);
-        return;
-      }
-      const msg = parseServerMessage(e.data);
-      if (!msg) return;
-      switch (msg.type) {
-        case 'welcome':
-          this.selfId = msg.id;
-          this.tries = 0;
-          this.setStatus('on');
-          this.h.welcome(msg.id, msg.code, msg.players);
-          break;
-        case 'join':
-          this.h.join(msg.player);
-          break;
-        case 'leave':
-          this.h.leave(msg.id);
-          break;
-        case 'pose': {
-          const { type: _t, id, ...frame } = msg;
-          this.h.pose(id, frame, performance.now());
-          break;
-        }
-        case 'car':
-          this.h.car(msg.id, msg.role);
-          break;
-        case 'horn':
-          this.h.horn(msg.id, msg.on);
-          break;
-        case 'ping':
-          this.h.ping(msg.id, msg.kind, msg.x, msg.z);
-          break;
-        case 'full':
-          this.wantOpen = false;
-          this.setStatus('full');
-          break;
-        case 'error':
-          break;
-      }
-    };
+    ws.onmessage = (e: MessageEvent<unknown>) => this.delayed('in', () => this.handle(e.data));
 
     ws.onclose = (e) => {
       window.clearInterval(this.pingTimer);
@@ -163,9 +147,56 @@ export class RoomClient {
     };
   }
 
+  private handle(data: unknown): void {
+    if (data === 'pong') {
+      this.rttMs = Math.round(performance.now() - this.pingSentAt);
+      return;
+    }
+    const msg = parseServerMessage(data);
+    if (!msg) return;
+    switch (msg.type) {
+      case 'welcome':
+        this.selfId = msg.id;
+        this.tries = 0;
+        this.setStatus('on');
+        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? []);
+        break;
+      case 'join':
+        this.h.join(msg.player);
+        break;
+      case 'leave':
+        this.h.leave(msg.id);
+        break;
+      case 'pose': {
+        const { type: _t, id, ...frame } = msg;
+        this.h.pose(id, frame, performance.now());
+        break;
+      }
+      case 'car':
+        this.h.car(msg.id, msg.role);
+        break;
+      case 'horn':
+        this.h.horn(msg.id, msg.on);
+        break;
+      case 'ping':
+        this.h.ping(msg.id, msg.kind, msg.x, msg.z);
+        break;
+      case 'prop':
+        this.h.prop(msg.prop);
+        break;
+      case 'full':
+        this.wantOpen = false;
+        this.setStatus('full');
+        break;
+      case 'error':
+        break;
+    }
+  }
+
   private send(text: string): boolean {
-    if (this.ws?.readyState !== WebSocket.OPEN || this.status !== 'on') return false;
-    this.ws.send(text);
+    const ws = this.ws;
+    if (ws?.readyState !== WebSocket.OPEN || this.status !== 'on') return false;
+    this.delayed('out', () => ws.readyState === WebSocket.OPEN && ws.send(text));
     return true;
   }
 
@@ -183,5 +214,14 @@ export class RoomClient {
 
   sendPing(kind: PingKind, x: number, z: number): void {
     this.send(encode({ type: 'ping', kind, x: Math.round(x * 100), z: Math.round(z * 100) }));
+  }
+
+  sendAttach(prop: string, end: 0 | 1): void {
+    this.send(encode({ type: 'attach', prop, end }));
+  }
+
+  /** Let go of whatever we hold, reporting where we saw it (used if nobody else holds it). */
+  sendDetach(x: number, z: number, yaw: number): void {
+    this.send(encode({ type: 'detach', x: Math.round(x * 100), z: Math.round(z * 100), yaw: Math.round(yaw * 1000) }));
   }
 }

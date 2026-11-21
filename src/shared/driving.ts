@@ -57,6 +57,8 @@ export function driveCommand(
   brakeForce: number,
   wheels: number,
   traction: number,
+  /** True while something is towing the car: no engine braking, so a rope can pull it. */
+  freewheel = false,
 ): WheelCommand {
   const t = clamp(input.throttle, -1, 1);
   const movingForward = forwardSpeed > 0.6;
@@ -71,7 +73,7 @@ export function driveCommand(
     if (movingForward) brake = brakeForce * -t;
     else engine = -power * 0.7 * -t * taper(-forwardSpeed / reverseTopSpeed);
   } else {
-    brake = brakeForce * 0.4; // light engine braking
+    brake = freewheel ? 0 : brakeForce * 0.4; // light engine braking, off while being towed
   }
   if (input.handbrake) brake = Math.max(brake, brakeForce); // slide comes from rear grip loss, not extra braking
 

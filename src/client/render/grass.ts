@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../../shared/rng';
 import type { Terrain } from '../../shared/terrain';
-import { FLOWER_COLOURS, scatterFlowers, scatterGrass, type Plant } from '../../shared/vegetation';
+import { PROPS } from '../../shared/net/props';
+import { FLOWER_COLOURS, scatterFlowers, scatterGrass, type Clearing, type Plant } from '../../shared/vegetation';
+
+/** No grass where props start, so a board lying on the lawn is not hidden by it. */
+const CLEARINGS: Clearing[] = PROPS.map((p) => ({ x: p.start.x, z: p.start.z, r: 3.2 }));
 
 const CELL = 16;
 
@@ -100,7 +104,7 @@ export function buildGrass(terrain: Terrain): Grass {
   };
 
   // Bin tufts into cells so the GPU can frustum-cull and we can thin far cells.
-  const plants = scatterGrass(terrain);
+  const plants = scatterGrass(terrain, undefined, CLEARINGS);
   const half = terrain.size / 2;
   const n = Math.ceil(terrain.size / CELL);
   const bins: Plant[][] = Array.from({ length: n * n }, () => []);
@@ -156,7 +160,7 @@ const PALETTE = [0xffffff, 0xff7aa8, 0xffd23f, 0xb48cff, 0xff8a4c];
 
 function buildFlowers(terrain: Terrain): THREE.Group {
   const group = new THREE.Group();
-  const flowers = scatterFlowers(terrain);
+  const flowers = scatterFlowers(terrain, undefined, undefined, CLEARINGS);
 
   const stemGeo = new THREE.CylinderGeometry(0.014, 0.018, 1, 4).translate(0, 0.5, 0);
   const petalGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.035, 9);

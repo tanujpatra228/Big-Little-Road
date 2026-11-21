@@ -1,5 +1,6 @@
 import { CAR_ORDER, type CarRole } from '../cars';
 import { MAX_FRAME_BYTES } from '../constants';
+import type { PropInfo } from './props';
 
 /**
  * Wire protocol: small JSON frames, defined once, validated on arrival.
@@ -43,16 +44,21 @@ export type ClientMsg =
   | ({ type: 'pose' } & PoseFrame)
   | { type: 'car'; role: CarRole }
   | { type: 'horn'; on: boolean }
-  | { type: 'ping'; kind: PingKind; x: number; z: number };
+  | { type: 'ping'; kind: PingKind; x: number; z: number }
+  /** Hook one end of a prop. */
+  | { type: 'attach'; prop: string; end: 0 | 1 }
+  /** Let go. x, z (cm) and yaw (mrad) say where the player saw the prop, used if nobody else holds it. */
+  | { type: 'detach'; x: number; z: number; yaw: number };
 
 export type ServerMsg =
-  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[] }
+  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[] }
   | { type: 'join'; player: PlayerInfo }
   | { type: 'leave'; id: string }
   | ({ type: 'pose'; id: string } & PoseFrame)
   | { type: 'car'; id: string; role: CarRole }
   | { type: 'horn'; id: string; on: boolean }
   | { type: 'ping'; id: string; kind: PingKind; x: number; z: number }
+  | { type: 'prop'; prop: PropInfo }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -117,6 +123,12 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       if (!(PING_KINDS as readonly unknown[]).includes(m.kind)) return null;
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;
       return { type: 'ping', kind: m.kind as PingKind, x: m.x, z: m.z };
+    case 'attach':
+      if (typeof m.prop !== 'string' || !/^[a-z0-9]{1,12}$/.test(m.prop) || (m.end !== 0 && m.end !== 1)) return null;
+      return { type: 'attach', prop: m.prop, end: m.end };
+    case 'detach':
+      if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.yaw, -7000, 7000)) return null;
+      return { type: 'detach', x: m.x, z: m.z, yaw: m.yaw };
     default:
       return null;
   }

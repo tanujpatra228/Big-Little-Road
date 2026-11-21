@@ -457,6 +457,23 @@ export class GameAudio {
     window.setTimeout(() => tail.disconnect(), 600);
   }
 
+  /** A short metallic click for hooking or letting go of a rope. */
+  hook(): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(1500, now);
+    o.frequency.exponentialRampToValueAtTime(620, now + 0.06);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.1, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    o.connect(g).connect(this.master);
+    o.start(now);
+    o.stop(now + 0.1);
+  }
+
   /** Hold-to-honk. Safe to call every frame. */
   horn(on: boolean): void {
     if (!this.ctx || on === this.hornOn) return;

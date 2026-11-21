@@ -1,5 +1,6 @@
 import type { CarRole } from '../cars';
 import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type ServerMsg } from './protocol';
+import { PropsLogic, toInfo, type PropState } from './props';
 
 /**
  * All room rules in one pure state machine: no sockets, no timers, no clock of its own.
@@ -43,11 +44,13 @@ const none = (): Result => ({ out: [], close: [] });
 
 export class RoomLogic {
   readonly players = new Map<string, Player>();
+  props = new PropsLogic();
 
   constructor(readonly code: string) {}
 
-  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number): RoomLogic {
+  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = []): RoomLogic {
     const room = new RoomLogic(code);
+    room.props = PropsLogic.restore(props);
     const live = new Set(liveConns);
     for (const p of saved) {
       if (!live.has(p.conn)) continue; // their socket died while we slept
@@ -58,6 +61,10 @@ export class RoomLogic {
 
   save(): SavedPlayer[] {
     return [...this.players.values()].map(({ id, name, role, key, conn }) => ({ id, name, role, key, conn }));
+  }
+
+  saveProps(): PropState[] {
+    return this.props.save();
   }
 
   info(p: Player): PlayerInfo {
@@ -102,7 +109,7 @@ export class RoomLogic {
 
   private welcomeAndJoin(p: Player, conn: string): Out[] {
     return [
-      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)) } },
+      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo) } },
       { to: { except: conn }, msg: { type: 'join', player: this.info(p) } },
     ];
   }
@@ -134,6 +141,14 @@ export class RoomLogic {
         return { out: [{ to: { except: conn }, msg: { type: 'horn', id: p.id, on: msg.on } }], close: [] };
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
+      case 'attach': {
+        const changed = this.props.attach(p.id, msg.prop, msg.end);
+        return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
+      }
+      case 'detach': {
+        const changed = this.props.detach(p.id, { x: msg.x / 100, z: msg.z / 100, yaw: msg.yaw / 1000 });
+        return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
+      }
     }
   }
 
@@ -141,6 +156,9 @@ export class RoomLogic {
     const p = this.byConn(conn);
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
-    return { out: [{ to: 'all', msg: { type: 'leave', id: p.id } }], close: [] };
+    const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
+    const freed = this.props.release(p.id); // a car that leaves lets go of the plank
+    if (freed) out.push({ to: 'all', msg: { type: 'prop', prop: toInfo(freed) } });
+    return { out, close: [] };
   }
 }

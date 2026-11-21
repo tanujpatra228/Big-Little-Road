@@ -5,6 +5,8 @@ import type { PlayerInfo, PoseFrame } from '../../shared/net/protocol';
 import { SnapshotBuffer } from '../../shared/net/snapshot-buffer';
 import type { WheelState } from '../physics/vehicle';
 import { CarMesh } from '../render/car-mesh';
+import { RemoteBody } from '../physics/vehicle';
+import type { PhysicsWorld } from '../physics/world';
 
 /** Another player's car: drawn from smoothed network poses, no physics here. */
 export class RemoteCar {
@@ -14,13 +16,17 @@ export class RemoteCar {
   mesh: CarMesh;
   /** Last drawn position, for placing sounds. */
   readonly position = new THREE.Vector3();
+  /** Heading, radians, 0 along +z. */
+  yaw = 0;
+  private body: RemoteBody;
   private readonly label: THREE.Sprite;
   private spin = 0;
 
-  constructor(private readonly scene: THREE.Scene, info: PlayerInfo) {
+  constructor(private readonly scene: THREE.Scene, private readonly pw: PhysicsWorld, info: PlayerInfo) {
     this.name = info.name;
     this.role = info.role;
     this.mesh = new CarMesh(CARS[info.role]);
+    this.body = new RemoteBody(pw, CARS[info.role]);
     this.mesh.group.visible = false; // until the first pose arrives
     scene.add(this.mesh.group);
     this.label = makeLabel(info.name);
@@ -33,6 +39,8 @@ export class RemoteCar {
     this.scene.remove(this.mesh.group);
     this.role = role;
     this.mesh = new CarMesh(CARS[role]);
+    this.body.dispose();
+    this.body = new RemoteBody(this.pw, CARS[role]);
     this.mesh.group.visible = was;
     this.scene.add(this.mesh.group);
   }
@@ -48,6 +56,8 @@ export class RemoteCar {
     this.mesh.group.visible = true;
     this.mesh.setPose({ x: s.x, y: s.y, z: s.z, qx: s.qx, qy: s.qy, qz: s.qz, qw: s.qw });
     this.position.set(s.x, s.y, s.z);
+    this.yaw = Math.atan2(2 * (s.qw * s.qy + s.qx * s.qz), 1 - 2 * (s.qy * s.qy + s.qz * s.qz));
+    this.body.moveTo(s);
     this.spin += (s.v / spec.wheelRadius) * dt;
 
     const y = wheelRestY(spec);
@@ -60,6 +70,7 @@ export class RemoteCar {
   }
 
   dispose(): void {
+    this.body.dispose();
     this.scene.remove(this.mesh.group);
     this.scene.remove(this.label);
     (this.label.material as THREE.SpriteMaterial).map?.dispose();

@@ -10,6 +10,7 @@ export class Hud {
   private readonly cars = document.createElement('div');
   private readonly fps = document.createElement('div');
   private readonly sound = document.createElement('div');
+  private readonly prompt = document.createElement('div');
   private audioState = '';
   private frames = 0;
   private acc = 0;
@@ -27,6 +28,7 @@ export class Hud {
       .hud .help{position:absolute;right:16px;bottom:16px;text-align:right;opacity:.75;font-size:12px}
       .hud .banner{position:absolute;top:30%;left:50%;transform:translateX(-50%);font-size:26px;font-weight:700;text-align:center;display:none}
       .hud .fps{position:absolute;right:16px;top:12px;font-size:12px;opacity:.7}
+      .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
       .hud .sound{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:13px;opacity:.85;background:#0006;padding:5px 12px;border-radius:999px}
     `;
     document.head.appendChild(css);
@@ -37,9 +39,10 @@ export class Hud {
     this.cars.className = 'cars';
     this.fps.className = 'fps';
     this.sound.className = 'sound';
+    this.prompt.className = 'prompt';
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space handbrake<br>1 2 3 switch car &middot; H horn &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space handbrake<br>1 2 3 switch car &middot; H horn &middot; F hook plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;
@@ -47,8 +50,14 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt);
     document.body.appendChild(this.root);
+  }
+
+  /** A contextual action hint near the bottom of the screen, or hidden when null. */
+  setPrompt(text: string | null): void {
+    this.prompt.style.display = text ? 'block' : 'none';
+    if (text) this.prompt.textContent = text;
   }
 
   /** Shows a hint until the browser lets audio start, and a note when muted. */

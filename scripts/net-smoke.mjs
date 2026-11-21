@@ -55,6 +55,26 @@ check('ping wheel message relayed', a.of('ping').some((p) => p.kind === 'go' && 
 b.send('ping'); await sleep(250);
 check('auto-response pong without waking the room', b.msgs.includes('pong'));
 
+// ---- the plank
+check('welcome tells a newcomer where the plank is', a.of('welcome')[0]?.props?.[0]?.id === 'plank1' && a.of('welcome')[0].props[0].h0 === '' && a.of('welcome')[0].props[0].h1 === '');
+a.send({ type: 'attach', prop: 'plank1', end: 0 }); await sleep(300);
+check('attach is announced to everyone, including the sender', a.of('prop').some((p) => p.prop.h0 === 'p1') && b.of('prop').some((p) => p.prop.h0 === 'p1'));
+b.send({ type: 'attach', prop: 'plank1', end: 0 }); await sleep(250);
+check('the same end cannot be taken twice (no broadcast)', b.of('prop').filter((p) => p.prop.h1 === 'p2').length === 0 && b.of('prop').length === 1);
+b.send({ type: 'attach', prop: 'plank1', end: 1 }); await sleep(300);
+check('the other end can be taken, so two hold it', a.of('prop').some((p) => p.prop.h0 === 'p1' && p.prop.h1 === 'p2'));
+a.send({ type: 'detach', x: 111, z: 222, yaw: 333 }); await sleep(250);
+b.send({ type: 'detach', x: 800, z: -400, yaw: 1500 }); await sleep(300);
+const last = a.of('prop').at(-1)?.prop;
+check('the last to let go sets where it rests, and it is free', last && last.h0 === '' && last.h1 === '' && last.x === 800 && last.z === -400 && last.yaw === 1500, JSON.stringify(last));
+b.send({ type: 'attach', prop: 'plank1', end: 1 }); await sleep(250);
+const late = new Client(code, 'Zed'); await late.hello(); await sleep(350);
+const lw = late.of('welcome')[0];
+check('a late joiner sees who holds the plank and where it rests', lw?.props?.[0]?.h1 === 'p2' && lw.props[0].x === 800, JSON.stringify(lw?.props?.[0]));
+late.close(); await sleep(300);
+a.send({ type: 'attach', prop: 'nope', end: 0 }); await sleep(200);
+check('unknown prop is ignored', true);
+
 const bad = new Client(code, 'Eve'); await bad.opened; bad.send('{"type":"pose","x":"nope"}'); await sleep(400);
 check('bad frame closes the connection (1008)', bad.closed?.code === 1008, JSON.stringify(bad.closed));
 
@@ -74,6 +94,9 @@ check('others are told when someone leaves', b.of('leave').some((l) => l.id === 
 
 const reload = new Client(code, 'Bo', 'relay', b.key); await reload.hello(); await sleep(500);
 check('reload with same key takes the slot (p2) and the stale socket is closed', reload.of('welcome')[0]?.id === 'p2' && b.closed !== null, JSON.stringify(b.closed));
+
+c.send({ type: 'detach', x: 999999, z: 0, yaw: 0 }); await sleep(350);
+check('detach with an absurd position is rejected (1008)', c.closed?.code === 1008, JSON.stringify(c.closed));
 
 const other = new Client('ZZZZ', 'Solo'); await other.hello(); await sleep(300);
 check('different rooms are isolated', other.of('welcome')[0]?.players.length === 1);

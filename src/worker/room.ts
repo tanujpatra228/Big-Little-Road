@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { encode, parseClientMessage, ROOM_CODE } from '../shared/net/protocol';
 import { RoomLogic, type Result, type SavedPlayer } from '../shared/net/room-logic';
+import type { PropState } from '../shared/net/props';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -49,12 +50,14 @@ export class Room extends DurableObject<Env> {
     if (code) await this.ctx.storage.put('code', code);
     const saved = (await this.ctx.storage.get<SavedPlayer[]>('players')) ?? [];
     const live = this.ctx.getWebSockets().map((ws) => (ws.deserializeAttachment() as Attachment | null)?.conn ?? '');
-    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now());
+    const props = (await this.ctx.storage.get<PropState[]>('props')) ?? [];
+    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now(), props);
     return this.logic;
   }
 
   private async persist(): Promise<void> {
-    if (this.logic) await this.ctx.storage.put('players', this.logic.save());
+    if (!this.logic) return;
+    await this.ctx.storage.put({ players: this.logic.save(), props: this.logic.saveProps() });
   }
 
   private dispatch(result: Result): void {
@@ -103,7 +106,7 @@ export class Room extends DurableObject<Env> {
     const now = Date.now();
     const result = msg.type === 'hello' ? logic.hello(att.conn, msg, now) : logic.message(att.conn, msg, now);
     this.dispatch(result);
-    if (msg.type === 'hello' || msg.type === 'car') await this.persist();
+    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach') await this.persist();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean): Promise<void> {
@@ -125,6 +128,6 @@ export class Room extends DurableObject<Env> {
     if (!att || !logic) return;
     const result = logic.close(att.conn);
     this.dispatch(result);
-    if (result.out.length) await this.persist();
+    if (result.out.length) await this.persist(); // players or a released prop changed
   }
 }

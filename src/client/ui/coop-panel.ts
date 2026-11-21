@@ -14,6 +14,8 @@ export interface PanelState {
   code: string;
   max: number;
   players: PanelPlayer[];
+  /** Simulated one-way delay in ms (?lag=), shown so nobody mistakes it for their real connection. */
+  lag?: number;
 }
 
 const NAME_KEY = 'blr-name';
@@ -130,5 +132,6 @@ export class CoopPanel {
       list.append(li);
     }
     root.append(list, el('div', `${s.players.length} of ${s.max} drivers`, 'note'));
+    if (s.lag) root.append(el('div', `Simulated lag: ${s.lag} ms each way`, 'note'));
   }
 }

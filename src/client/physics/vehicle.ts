@@ -22,6 +22,48 @@ export interface WheelState {
   contact: boolean;
 }
 
+/**
+ * Chassis shape: a box with an angled underbody at the nose and tail (approach and departure
+ * angles), so it rides up onto things instead of snagging, and slides off when it lands on one.
+ * Shared by the local car and by the solid stand-ins for other players' cars.
+ */
+export function chassisCollider(R: typeof RAPIER, spec: CarSpec): RAPIER.ColliderDesc {
+  const h = spec.half;
+  const ch = h.z * 0.45;
+  const cs = 0.08;
+  const hull = R.ColliderDesc.convexHull(
+    new Float32Array([
+      h.x, h.y, h.z, -h.x, h.y, h.z, h.x, h.y, -h.z, -h.x, h.y, -h.z,
+      h.x - cs, -h.y, h.z - ch, -(h.x - cs), -h.y, h.z - ch, h.x - cs, -h.y, -(h.z - ch), -(h.x - cs), -h.y, -(h.z - ch),
+    ]),
+  );
+  return hull ?? R.ColliderDesc.cuboid(h.x, h.y, h.z);
+}
+
+/**
+ * A solid stand-in for another player's car. Kinematic: it follows the pose we are told, and
+ * pushes our car around if they touch, but our car cannot push it. Both browsers do this for each
+ * other, so it works like bumper cars. Real momentum transfer would need shared physics.
+ */
+export class RemoteBody {
+  private body: RAPIER.RigidBody;
+
+  constructor(private readonly pw: PhysicsWorld, spec: CarSpec) {
+    const R = pw.rapier;
+    this.body = pw.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -200, 0)); // parked out of the way until the first pose
+    pw.world.createCollider(chassisCollider(R, spec).setFriction(0.3).setRestitution(0.05), this.body);
+  }
+
+  moveTo(p: { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number }): void {
+    this.body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z });
+    this.body.setNextKinematicRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw });
+  }
+
+  dispose(): void {
+    this.pw.world.removeRigidBody(this.body);
+  }
+}
+
 export class Vehicle {
   readonly spec: CarSpec;
   readonly body: RAPIER.RigidBody;
@@ -40,6 +82,7 @@ export class Vehicle {
   braking = false;
   private velBefore = { x: 0, y: 0, z: 0 };
   private impact: Impact | null = null;
+  private pulled = false;
 
   constructor(pw: PhysicsWorld, spec: CarSpec, x: number, z: number, yaw: number) {
     this.pw = pw;
@@ -57,20 +100,7 @@ export class Vehicle {
         .setCcdEnabled(true),
     );
     const { half: h } = spec;
-    // Chassis with an angled underbody at the nose and tail (approach and departure angles),
-    // so it rides up onto things instead of snagging, and slides off when it does land on one.
-    const ch = h.z * 0.45;
-    const cs = 0.08;
-    const hull = R.ColliderDesc.convexHull(
-      new Float32Array([
-        h.x, h.y, h.z, -h.x, h.y, h.z, h.x, h.y, -h.z, -h.x, h.y, -h.z,
-        h.x - cs, -h.y, h.z - ch, -(h.x - cs), -h.y, h.z - ch, h.x - cs, -h.y, -(h.z - ch), -(h.x - cs), -h.y, -(h.z - ch),
-      ]),
-    );
-    const collider = pw.world.createCollider(
-      (hull ?? R.ColliderDesc.cuboid(h.x, h.y, h.z)).setFriction(0.3).setRestitution(0.05),
-      this.body,
-    );
+    const collider = pw.world.createCollider(chassisCollider(R, spec).setFriction(0.3).setRestitution(0.05), this.body);
     // Mass and inertia from a box, with the centre of mass dropped for stability.
     const inertia = (m: number, a: number, b: number): number => (m / 3) * (a * a + b * b);
     collider.setMassProperties(
@@ -139,7 +169,8 @@ export class Vehicle {
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3);
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
-    const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction);
+    const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
+    this.pulled = false;
 
     for (let i = 0; i < WHEELS; i++) {
       const front = i < 2;
@@ -193,7 +224,16 @@ export class Vehicle {
     this.flippedFor = stuckUpsideDown ? this.flippedFor + dt : 0;
   }
 
+  /** Pushes the car along the ground as an acceleration, e.g. from a rope. Call once per physics step. */
+  pushPlanar(ax: number, az: number, dt: number): void {
+    if (ax === 0 && az === 0) return;
+    this.pulled = true;
+    const m = this.spec.mass;
+    this.body.applyImpulse({ x: m * ax * dt, y: 0, z: m * az * dt }, true);
+  }
+
   /** The hardest impact since the last call, or null. Read once per frame. */
+
   consumeImpact(): Impact | null {
     const i = this.impact;
     this.impact = null;
