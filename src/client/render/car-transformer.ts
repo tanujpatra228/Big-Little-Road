@@ -1,107 +1,105 @@
 import * as THREE from 'three';
-import type { CarSpec } from '../../shared/cars';
-import { SWAP_AT, TRANSFORM_DURATION, flashStrength, incomingScale, outgoingScale, ringProgress } from '../../shared/transform-anim';
+import { wheelRestY, type CarSpec } from '../../shared/cars';
+import {
+  TRANSFORM_DURATION, WHEEL_SWAP_AT, armScale, lerp, lockEvents, wheelBlend, type FrameId, type LockEvent, type RegionId,
+} from '../../shared/transform-anim';
 import type { Pose, Vehicle, WheelState } from '../physics/vehicle';
 import { CarMesh } from './car-mesh';
 import { glow } from './glow';
+import { TransformRig } from './transform-rig';
 
-const SPARKS = 34;
+const SPARK_SLOTS = 72;
+const SPARK_LIFE = 0.45;
 
-/** The one-off effects of a single transformation: flash, ground ring, and a spark burst. */
-class Burst {
-  private readonly flash: THREE.Sprite;
-  private readonly ring: THREE.Mesh;
+/**
+ * Small metal sparks where a part clicks home. A fixed pool, so a transformation never allocates.
+ * Each spark fades by dimming its colour (the points are additive) and parks itself when it dies.
+ */
+class Sparks {
   private readonly points: THREE.Points;
-  private readonly vel = new Float32Array(SPARKS * 3);
-  private sparksLive = false;
+  private readonly pos: THREE.BufferAttribute;
+  private readonly col: THREE.BufferAttribute;
+  private readonly vel = new Float32Array(SPARK_SLOTS * 3);
+  private readonly age = new Float32Array(SPARK_SLOTS).fill(SPARK_LIFE);
+  private next = 0;
 
   constructor(private readonly scene: THREE.Scene) {
-    this.flash = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glow(), color: 0xfff0c4, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, depthTest: false, fog: false }),
-    );
-    this.flash.renderOrder = 20;
-    this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.82, 1, 56).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0xffe2a0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }),
-    );
-    this.ring.renderOrder = 19;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARKS * 3), 3));
+    this.pos = new THREE.BufferAttribute(new Float32Array(SPARK_SLOTS * 3), 3);
+    this.col = new THREE.BufferAttribute(new Float32Array(SPARK_SLOTS * 3), 3);
+    geo.setAttribute('position', this.pos);
+    geo.setAttribute('color', this.col);
     this.points = new THREE.Points(
       geo,
-      new THREE.PointsMaterial({ color: 0xffd98a, size: 0.3, map: glow(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }),
+      new THREE.PointsMaterial({ size: 0.16, map: glow(), vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }),
     );
     this.points.frustumCulled = false;
-    this.points.visible = false;
-    scene.add(this.flash, this.ring, this.points);
+    for (let i = 0; i < SPARK_SLOTS; i++) this.pos.setXYZ(i, 0, -999, 0);
+    scene.add(this.points);
   }
 
-  /** `at` is the car's position; sparks inherit half its velocity so they travel with a moving car. */
-  emitSparks(at: THREE.Vector3, carVel: { x: number; z: number }): void {
-    const pos = this.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < SPARKS; i++) {
+  /** `carVel` is shared (half of it), so sparks travel with a moving car. */
+  emit(at: THREE.Vector3, carVel: { x: number; z: number }, count: number): void {
+    for (let n = 0; n < count; n++) {
+      const i = this.next;
+      this.next = (this.next + 1) % SPARK_SLOTS;
       const a = Math.random() * Math.PI * 2;
-      const speed = 2.5 + Math.random() * 4;
-      const up = 0.4 + Math.random() * 0.9;
-      pos.setXYZ(i, at.x, at.y, at.z);
+      const speed = 1.2 + Math.random() * 2.6;
+      this.pos.setXYZ(i, at.x, at.y, at.z);
       this.vel[i * 3] = Math.cos(a) * speed + carVel.x * 0.5;
-      this.vel[i * 3 + 1] = up * speed;
+      this.vel[i * 3 + 1] = 0.6 + Math.random() * 1.8;
       this.vel[i * 3 + 2] = Math.sin(a) * speed + carVel.z * 0.5;
+      this.age[i] = 0;
     }
-    pos.needsUpdate = true;
-    this.sparksLive = true;
-    this.points.visible = true;
   }
 
-  update(t: number, carPos: THREE.Vector3, dt: number): void {
-    const f = flashStrength(t);
-    this.flash.visible = f > 0;
-    this.flash.position.set(carPos.x, carPos.y + 0.2, carPos.z);
-    this.flash.scale.setScalar(0.6 + f * 3.2);
-    (this.flash.material as THREE.SpriteMaterial).opacity = Math.min(1, f * 1.1);
-
-    const r = ringProgress(t);
-    this.ring.visible = r > 0 && r < 1;
-    this.ring.position.set(carPos.x, carPos.y - 0.45, carPos.z);
-    this.ring.scale.setScalar(0.5 + r * 3.2);
-    (this.ring.material as THREE.MeshBasicMaterial).opacity = (1 - r) * 0.85;
-
-    if (this.sparksLive) {
-      const pos = this.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < SPARKS; i++) {
-        this.vel[i * 3 + 1]! -= 9 * dt;
-        pos.setXYZ(i, pos.getX(i) + this.vel[i * 3]! * dt, pos.getY(i) + this.vel[i * 3 + 1]! * dt, pos.getZ(i) + this.vel[i * 3 + 2]! * dt);
+  update(dt: number): void {
+    for (let i = 0; i < SPARK_SLOTS; i++) {
+      const age = this.age[i]!;
+      if (age >= SPARK_LIFE) continue;
+      const next = age + dt;
+      this.age[i] = next;
+      if (next >= SPARK_LIFE) {
+        this.pos.setXYZ(i, 0, -999, 0);
+        this.col.setXYZ(i, 0, 0, 0);
+        continue;
       }
-      pos.needsUpdate = true;
-      (this.points.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - (t - SWAP_AT) / 0.5);
+      this.vel[i * 3 + 1]! -= 9 * dt;
+      this.pos.setXYZ(i, this.pos.getX(i) + this.vel[i * 3]! * dt, this.pos.getY(i) + this.vel[i * 3 + 1]! * dt, this.pos.getZ(i) + this.vel[i * 3 + 2]! * dt);
+      const f = 1 - next / SPARK_LIFE;
+      this.col.setXYZ(i, 1 * f, 0.82 * f, 0.5 * f);
     }
+    this.pos.needsUpdate = true;
+    this.col.needsUpdate = true;
   }
 
   dispose(): void {
-    this.scene.remove(this.flash, this.ring, this.points);
-    (this.flash.material as THREE.Material).dispose();
-    this.ring.geometry.dispose();
-    (this.ring.material as THREE.Material).dispose();
+    this.scene.remove(this.points);
     this.points.geometry.dispose();
     (this.points.material as THREE.Material).dispose();
   }
 }
 
 /**
- * Holds a car's model and changes it into another with a short transformation: the old car squashes
- * under a building flash, then the new one springs up with a spark burst and a ground ring.
+ * Holds a car's model and changes it into another by taking it apart: the small details fold away
+ * on hinges, the five big boxes lift, travel and lock into the new shape, the wheels glide to the
+ * new track and swap tyres, and the new details unfold. Sparks fly where parts click home.
  * The physics does not wait; the car keeps moving the whole time.
  */
 export class CarTransformer {
   private current: CarMesh;
   private outgoing: CarMesh | null = null;
-  private burst: Burst | null = null;
+  private rig: TransformRig | null = null;
+  private sparks: Sparks | null = null;
+  private events: LockEvent[] = [];
+  private nextEvent = 0;
   private t = -1; // seconds into the animation, or -1 when idle
-  private swapped = false;
   private carVel = { x: 0, z: 0 };
   private visible = true;
-  /** Fires at the moment of the swap, e.g. for sound. */
-  onSwap: (() => void) | null = null;
+  private lastStates: readonly WheelState[] = [];
+  private readonly scratch = new THREE.Vector3();
+  /** Fires when a transformation begins, e.g. for sound. */
+  onStart: (() => void) | null = null;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -120,10 +118,25 @@ export class CarTransformer {
     return this.t >= 0;
   }
 
+  /** Seconds into the running transformation, or -1. */
+  get time(): number {
+    return this.t;
+  }
+
   setVisible(v: boolean): void {
     this.visible = v;
-    this.current.group.visible = v && (this.t < 0 || this.swapped);
-    if (this.outgoing) this.outgoing.group.visible = v && !this.swapped;
+    this.applyVisibility();
+  }
+
+  private applyVisibility(): void {
+    if (this.t < 0) {
+      this.current.group.visible = this.visible;
+      return;
+    }
+    const swapped = this.t >= WHEEL_SWAP_AT;
+    this.current.group.visible = this.visible && swapped;
+    if (this.outgoing) this.outgoing.group.visible = this.visible && !swapped;
+    if (this.rig) this.rig.group.visible = this.visible;
   }
 
   /** Replace the model at once, no animation. */
@@ -140,13 +153,20 @@ export class CarTransformer {
     this.finish();
     this.outgoing = this.current;
     this.current = new CarMesh(spec);
-    this.current.group.visible = false; // appears at the swap
-    this.current.group.scale.setScalar(0.001);
     this.scene.add(this.current.group);
-    this.burst = new Burst(this.scene);
+    // Both cars' bodies are hidden: the rig stands in for them. Their wheels and arms still show.
+    this.outgoing.setBodyVisible(false);
+    this.current.setBodyVisible(false);
+    this.rig = new TransformRig(this.outgoing.parts, this.outgoing.spec, this.current.parts, this.current.spec);
+    this.scene.add(this.rig.group);
+    this.sparks = new Sparks(this.scene);
+    this.events = lockEvents();
+    this.nextEvent = 0;
     this.carVel = carVel;
     this.t = 0;
-    this.swapped = false;
+    this.pose(this.current.group.position, this.current.group.quaternion);
+    this.applyFrame();
+    this.onStart?.();
   }
 
   /** Jump to the end of any running animation. */
@@ -156,26 +176,82 @@ export class CarTransformer {
       this.scene.remove(this.outgoing.group);
       this.outgoing = null;
     }
-    this.current.group.scale.setScalar(1);
-    this.current.group.visible = this.visible;
-    this.burst?.dispose();
-    this.burst = null;
+    this.rig?.dispose();
+    this.rig = null;
+    this.sparks?.dispose();
+    this.sparks = null;
+    this.current.setBodyVisible(true);
+    this.current.setWheelScale(1);
+    this.current.setTrimScale(1);
     this.t = -1;
+    this.current.group.visible = this.visible;
+    if (this.lastStates.length) this.current.setWheels(this.lastStates);
+  }
+
+  /** Copies a pose onto the rig and the outgoing car, so they follow the car. */
+  private pose(p: THREE.Vector3, q: THREE.Quaternion): void {
+    this.rig?.setPose({ x: p.x, y: p.y, z: p.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w });
+    if (this.outgoing) {
+      this.outgoing.group.position.copy(p);
+      this.outgoing.group.quaternion.copy(q);
+    }
   }
 
   setPose(pose: Pose): void {
     this.current.setPose(pose);
-    this.outgoing?.setPose(pose);
+    this.pose(this.current.group.position, this.current.group.quaternion);
   }
 
   setWheels(states: readonly WheelState[]): void {
-    this.current.setWheels(states);
+    this.lastStates = states;
+    if (this.t < 0) this.current.setWheels(states);
+    else this.applyWheels();
   }
 
-  /** Local car: pose, wheels, lights from the vehicle. The outgoing model only follows the pose. */
+  /**
+   * Wheels while transforming: they start where the old car had them and glide to where the physics
+   * (already the new car's) has them, growing or shrinking to the new radius. The old tyres show
+   * until the middle of the glide, then the new ones take over at the same size.
+   */
+  private applyWheels(): void {
+    const out = this.outgoing;
+    const states = this.lastStates;
+    if (!out || !states.length) return;
+    const from = out.spec;
+    const to = this.current.spec;
+    const k = wheelBlend(this.t);
+    const blended: WheelState[] = states.map((s) => {
+      const sx = Math.sign(s.x) || 1;
+      const sz = Math.sign(s.z) || 1;
+      return {
+        ...s,
+        x: lerp(sx * from.trackHalf, s.x, k),
+        z: lerp(sz * from.wheelBaseHalf, s.z, k),
+        y: s.y + (1 - k) * (wheelRestY(from) - wheelRestY(to)),
+      };
+    });
+    const radius = lerp(from.wheelRadius, to.wheelRadius, k);
+    out.setWheelScale(radius / from.wheelRadius);
+    this.current.setWheelScale(radius / to.wheelRadius);
+    const swapped = this.t >= WHEEL_SWAP_AT;
+    (swapped ? this.current : out).setWheels(blended);
+    const trim = armScale(this.t);
+    out.setTrimScale(swapped ? 0 : trim);
+    this.current.setTrimScale(swapped ? trim : 0);
+  }
+
+  /** Everything that depends on the clock: rig, wheels, which model shows. */
+  private applyFrame(): void {
+    this.rig?.update(this.t);
+    this.applyWheels();
+    this.applyVisibility();
+  }
+
+  /** Local car: pose, wheels, lights from the vehicle. */
   update(vehicle: Vehicle, pose: Pose, dt: number): void {
     this.current.update(vehicle, pose, dt);
-    this.outgoing?.setPose(pose);
+    if (this.t >= 0) this.lastStates = [0, 1, 2, 3].map((i) => vehicle.wheelState(i));
+    this.pose(this.current.group.position, this.current.group.quaternion);
     this.tick(dt);
   }
 
@@ -183,26 +259,24 @@ export class CarTransformer {
   tick(dt: number): void {
     if (this.t < 0) return;
     this.t += dt;
-    const pos = this.current.group.position;
+    this.applyFrame();
 
-    if (!this.swapped && this.t >= SWAP_AT) {
-      this.swapped = true;
-      if (this.outgoing) this.outgoing.group.visible = false;
-      this.current.group.visible = this.visible;
-      this.burst?.emitSparks(pos, this.carVel);
-      this.onSwap?.();
+    while (this.nextEvent < this.events.length && this.t >= this.events[this.nextEvent]!.t) {
+      this.lock(this.events[this.nextEvent]!);
+      this.nextEvent++;
     }
-
-    if (!this.swapped) {
-      const s = outgoingScale(this.t);
-      this.outgoing?.group.scale.set(s.x, s.y, s.z);
-    } else {
-      const s = incomingScale(this.t);
-      this.current.group.scale.set(s.x, s.y, s.z);
-    }
-    this.burst?.update(this.t, pos, dt);
+    this.sparks?.update(dt);
 
     if (this.t >= TRANSFORM_DURATION) this.finish();
+  }
+
+  /** Sparks where a big box or a group of details clicks into place. */
+  private lock(e: LockEvent): void {
+    if (!this.rig || !this.sparks) return;
+    const local =
+      e.kind === 'frame' ? this.rig.framePosition(e.id as FrameId, this.scratch) : this.scratch.set(0, e.id === ('top' as RegionId) ? this.current.spec.half.y * 0.9 : 0, e.id === 'front' ? this.current.spec.half.z * 0.6 : e.id === 'rear' ? -this.current.spec.half.z * 0.6 : 0);
+    const world = this.rig.group.localToWorld(local.clone());
+    this.sparks.emit(world, this.carVel, e.kind === 'frame' ? 7 : 4);
   }
 
   dispose(): void {

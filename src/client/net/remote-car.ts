@@ -33,7 +33,7 @@ export class RemoteCar {
     this.name = info.name;
     this.role = info.role;
     this.xform = new CarTransformer(scene, CARS[info.role]);
-    this.xform.onSwap = () => this.onTransform?.();
+    this.xform.onStart = () => this.onTransform?.();
     this.body = new RemoteBody(pw, CARS[info.role]);
     this.xform.setVisible(false); // until the first pose arrives
     this.label = makeLabel(info.name);

@@ -78,7 +78,7 @@ async function boot(): Promise<void> {
     if (xform) xform.reset(specs[r]);
     else {
       xform = new CarTransformer(scene, specs[r]);
-      xform.onSwap = () => audio.transform();
+      xform.onStart = () => audio.transform();
     }
     chase.snap();
     tune?.show(specs[r]);

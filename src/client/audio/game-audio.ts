@@ -1,3 +1,4 @@
+import { TRANSFORM_DURATION, latchTimes, lockEvents } from '../../shared/transform-anim';
 import { CARS, type CarRole } from '../../shared/cars';
 import { Surface } from '../../shared/surfaces';
 import {
@@ -511,58 +512,81 @@ export class GameAudio {
       p.pan.value = Math.max(-1, Math.min(1, pan));
       p.connect(this.fxBus);
       out = p;
-      window.setTimeout(() => p.disconnect(), 1200);
+      window.setTimeout(() => p.disconnect(), 2400);
     }
 
-    // Servo whirr
+    const total = TRANSFORM_DURATION;
+
+    // Servo whirr: a motor that spins up as the parts start to move, hums through the middle and winds down as they lock.
     const whirr = ctx.createOscillator();
     whirr.type = 'sawtooth';
-    whirr.frequency.setValueAtTime(180, now);
-    whirr.frequency.exponentialRampToValueAtTime(760, now + 0.24);
-    whirr.frequency.exponentialRampToValueAtTime(300, now + 0.6);
+    whirr.frequency.setValueAtTime(150, now);
+    whirr.frequency.exponentialRampToValueAtTime(520, now + 0.45);
+    whirr.frequency.exponentialRampToValueAtTime(380, now + 0.95);
+    whirr.frequency.exponentialRampToValueAtTime(190, now + total);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 1100;
+    bp.frequency.value = 950;
     bp.Q.value = 3;
     const wg = ctx.createGain();
     wg.gain.setValueAtTime(0.0001, now);
-    wg.gain.linearRampToValueAtTime(0.09 * gain, now + 0.08);
-    wg.gain.setValueAtTime(0.09 * gain, now + 0.4);
-    wg.gain.exponentialRampToValueAtTime(0.0005, now + 0.65);
+    wg.gain.linearRampToValueAtTime(0.085 * gain, now + 0.18);
+    wg.gain.setValueAtTime(0.085 * gain, now + total - 0.4);
+    wg.gain.exponentialRampToValueAtTime(0.0005, now + total + 0.05);
     whirr.connect(bp).connect(wg).connect(out);
     whirr.start(now);
-    whirr.stop(now + 0.7);
+    whirr.stop(now + total + 0.1);
 
-    // Whoosh: noise swept up into the flash, then down
+    // Grinding metal: noise that swells while the big boxes travel.
     const air = ctx.createBufferSource();
     air.buffer = this.noise;
     const abp = ctx.createBiquadFilter();
     abp.type = 'bandpass';
-    abp.Q.value = 1.2;
-    abp.frequency.setValueAtTime(400, now);
-    abp.frequency.exponentialRampToValueAtTime(3200, now + 0.25);
-    abp.frequency.exponentialRampToValueAtTime(700, now + 0.6);
+    abp.Q.value = 2.2;
+    abp.frequency.setValueAtTime(500, now);
+    abp.frequency.exponentialRampToValueAtTime(2200, now + 0.6);
+    abp.frequency.exponentialRampToValueAtTime(900, now + total);
     const ag = ctx.createGain();
     ag.gain.setValueAtTime(0.0001, now);
-    ag.gain.linearRampToValueAtTime(0.13 * gain, now + 0.22);
-    ag.gain.exponentialRampToValueAtTime(0.0005, now + 0.65);
+    ag.gain.linearRampToValueAtTime(0.1 * gain, now + 0.55);
+    ag.gain.exponentialRampToValueAtTime(0.0005, now + total);
     air.connect(abp).connect(ag).connect(out);
     air.start(now, Math.random());
-    air.stop(now + 0.7);
+    air.stop(now + total + 0.05);
 
-    // Clanks as it locks: one before the swap, one as the new shape settles
-    for (const [at, hz, level] of [[0.14, 1250, 0.1], [0.3, 820, 0.14]] as const) {
+    // Ratchet clicks as each part unlatches, timed with the animation.
+    for (const at of latchTimes()) {
       const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.setValueAtTime(hz, now + at);
-      o.frequency.exponentialRampToValueAtTime(hz * 0.55, now + at + 0.09);
+      o.type = 'square';
+      o.frequency.setValueAtTime(2100 + Math.random() * 500, now + at);
+      o.frequency.exponentialRampToValueAtTime(900, now + at + 0.03);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(level * gain, now + at);
-      g.gain.exponentialRampToValueAtTime(0.0005, now + at + 0.12);
+      g.gain.setValueAtTime(0.0001, now + at);
+      g.gain.exponentialRampToValueAtTime(0.06 * gain, now + at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0005, now + at + 0.045);
       o.connect(g).connect(out);
       o.start(now + at);
-      o.stop(now + at + 0.14);
+      o.stop(now + at + 0.06);
     }
+
+    // A clank as each part locks home. The heavy parts are lower and louder; the last one rings.
+    const locks = lockEvents();
+    locks.forEach((e, i) => {
+      const heavy = e.kind === 'frame';
+      const last = i === locks.length - 1;
+      const hz = (heavy ? 640 : 1150) * (0.92 + Math.random() * 0.16);
+      const level = (last ? 0.2 : heavy ? 0.14 : 0.07) * gain;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(hz, now + e.t);
+      o.frequency.exponentialRampToValueAtTime(hz * 0.55, now + e.t + 0.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(level, now + e.t);
+      g.gain.exponentialRampToValueAtTime(0.0005, now + e.t + (last ? 0.3 : 0.13));
+      o.connect(g).connect(out);
+      o.start(now + e.t);
+      o.stop(now + e.t + (last ? 0.34 : 0.16));
+    });
   }
 
   /** A short happy fanfare: a rising arpeggio with a shimmer. Plays when a goal is reached. */

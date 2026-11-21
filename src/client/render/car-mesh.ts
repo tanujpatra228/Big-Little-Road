@@ -15,9 +15,10 @@ export class CarMesh {
   private readonly tmpDir = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
   private readonly flames: THREE.Mesh[] = [];
+  private trim = 1;
   private readonly glows: THREE.Sprite[] = [];
 
-  constructor(spec: CarSpec, variant: CarVariant = 'standard', color?: number) {
+  constructor(readonly spec: CarSpec, variant: CarVariant = 'standard', color?: number) {
     this.model = buildCar(spec, variant, color);
     this.group = this.model.group;
     this.applyLights();
@@ -68,6 +69,32 @@ export class CarMesh {
     }
   }
 
+  /** The parts the transformation takes apart and rebuilds: the car's own body shapes and number decals. */
+  get parts(): CarModel {
+    return this.model;
+  }
+
+  /** Hide or show the body shapes and door numbers (wheels and arms stay), while a rig stands in for them. */
+  setBodyVisible(v: boolean): void {
+    this.model.bodyGroup.visible = v;
+    for (const b of this.model.badges) b.visible = v;
+  }
+
+  /** Scales all four wheels together, so the tyres can grow or shrink on the way to another car's size. */
+  setWheelScale(s: number): void {
+    for (const w of this.model.wheels) w.pivot.scale.setScalar(Math.max(0.001, s));
+  }
+
+  /** Scale of the suspension arms and door numbers. They retract and spring back during a transformation. */
+  setTrimScale(s: number): void {
+    this.trim = s;
+    const on = s > 0.01;
+    for (const b of this.model.badges) {
+      b.visible = on;
+      b.scale.setScalar(Math.max(0.001, s) * (this.spec.role === 'hauler' ? 1.15 : 0.95));
+    }
+  }
+
   setLights(on: boolean): void {
     this.lightsOn = on;
     this.applyLights();
@@ -111,7 +138,9 @@ export class CarMesh {
         const len = this.tmpDir.length();
         arm.mesh.position.copy(arm.anchor).addScaledVector(this.tmpDir, 0.5);
         arm.mesh.quaternion.setFromUnitVectors(this.up, this.tmpDir.divideScalar(len || 1));
-        arm.mesh.scale.set(1, len, 1);
+        const a = Math.max(0.001, this.trim);
+        arm.mesh.visible = this.trim > 0.01;
+        arm.mesh.scale.set(a, len, a);
       }
     });
   }
