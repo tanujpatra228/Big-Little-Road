@@ -1,5 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { Terrain } from '../../shared/terrain';
+import type { Boulder } from '../../shared/boulders';
 
 export const FIXED_DT = 1 / 60;
 
@@ -30,7 +31,7 @@ export function heightfieldMatrix(terrain: Terrain): Float32Array {
   return out;
 }
 
-export function createPhysicsWorld(terrain: Terrain): PhysicsWorld {
+export function createPhysicsWorld(terrain: Terrain, boulders: readonly Boulder[] = []): PhysicsWorld {
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.timestep = FIXED_DT;
   const n = terrain.points;
@@ -41,5 +42,10 @@ export function createPhysicsWorld(terrain: Terrain): PhysicsWorld {
     { x: terrain.size, y: 1, z: terrain.size },
   ).setFriction(1);
   world.createCollider(desc);
+  for (const b of boulders) {
+    world.createCollider(
+      RAPIER.ColliderDesc.ball(b.radius).setTranslation(b.x, b.y, b.z).setFriction(0.9).setRestitution(0.35),
+    );
+  }
   return { rapier: RAPIER, world, terrain };
 }

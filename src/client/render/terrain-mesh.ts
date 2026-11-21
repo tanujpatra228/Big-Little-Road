@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Surface } from '../../shared/surfaces';
 import { mulberry32 } from '../../shared/rng';
 import { WATER_LEVEL, type Terrain } from '../../shared/terrain';
+import type { Boulder } from '../../shared/boulders';
 
 const COLORS: Record<Surface, number> = {
   [Surface.Grass]: 0x5a8f3c,
@@ -10,6 +11,7 @@ const COLORS: Record<Surface, number> = {
   [Surface.Mud]: 0x5b4126,
   [Surface.Rock]: 0x8b8e93,
   [Surface.Water]: 0x2f6f8f,
+  [Surface.Gravel]: 0xa59d8c,
 };
 
 export function buildTerrainMesh(terrain: Terrain): THREE.Group {
@@ -88,8 +90,9 @@ function buildScatter(terrain: Terrain): THREE.Group {
       const k = 0.6 + rand() * 1.1;
       m.compose(new THREE.Vector3(x, y, z), q.setFromEuler(e.set(0, rand() * 6.28, 0)), new THREE.Vector3(k, k, k));
       tufts.push(m.clone());
-    } else if ((s === Surface.Rock || s === Surface.Sand) && rocks.length < 450) {
-      const k = (s === Surface.Rock ? 0.35 : 0.2) + rand() * (s === Surface.Rock ? 0.9 : 0.3);
+    } else if ((s === Surface.Gravel || s === Surface.Sand) && rocks.length < 450) {
+      // Pebbles only. Real boulders come from boulders.ts and have colliders.
+      const k = 0.12 + rand() * 0.22;
       m.compose(new THREE.Vector3(x, y + k * 0.3, z), q.setFromEuler(e.set(rand() * 3, rand() * 3, rand() * 3)), new THREE.Vector3(k, k * 0.8, k));
       rocks.push(m.clone());
     }
@@ -101,4 +104,24 @@ function buildScatter(terrain: Terrain): THREE.Group {
   rocks.forEach((t, i) => rockMesh.setMatrixAt(i, t));
   group.add(tuftMesh, rockMesh);
   return group;
+}
+
+/** Visual boulders. Same list the physics uses, so what you see is what you hit. */
+export function buildBoulderMesh(boulders: readonly Boulder[]): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x80848b, flatShading: true, roughness: 1 }),
+    boulders.length,
+  );
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  boulders.forEach((b, i) => {
+    // Slightly under the collider radius so the mesh never floats above what you hit.
+    m.compose(new THREE.Vector3(b.x, b.y, b.z), q.setFromEuler(e.set(b.rx, b.ry, b.rz)), new THREE.Vector3(b.radius, b.radius * 0.92, b.radius));
+    mesh.setMatrixAt(i, m);
+  });
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
 }

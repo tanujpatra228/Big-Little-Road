@@ -20,7 +20,7 @@ describe('terrain', () => {
 
   it('has every surface type', () => {
     const seen = new Set<number>(t.surfaces);
-    for (const s of [Surface.Grass, Surface.Patio, Surface.Sand, Surface.Mud, Surface.Rock, Surface.Water]) {
+    for (const s of [Surface.Grass, Surface.Patio, Surface.Sand, Surface.Mud, Surface.Rock, Surface.Water, Surface.Gravel]) {
       expect(seen.has(s)).toBe(true);
     }
   });

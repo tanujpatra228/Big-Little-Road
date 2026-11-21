@@ -67,13 +67,15 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Mud]: { grip: 0.8, drag: 1.4 }, // sinks
       [Surface.Water]: { drag: 1.3 },
       [Surface.Rock]: { grip: 0.85 },
+      [Surface.Gravel]: { grip: 1.0, drag: 0.4 }, // skims the stones
     },
     surfaceSpeed: {
       [Surface.Grass]: 1,
       [Surface.Patio]: 1,
       [Surface.Sand]: 0.8,
       [Surface.Mud]: 1,
-      [Surface.Rock]: 0.72,
+      [Surface.Rock]: 1,
+      [Surface.Gravel]: 0.9,
       [Surface.Water]: 1,
     },
   },
@@ -105,7 +107,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     surfaces: {
       [Surface.Sand]: { grip: 0.9, drag: 1.0 }, // heavy: digs in
       [Surface.Mud]: { grip: 1.35, drag: 0.55, traction: 1.35 },
-      [Surface.Rock]: { grip: 1.3, traction: 1.25 },
+      [Surface.Rock]: { grip: 1.3 },
       [Surface.Water]: { drag: 0.8, traction: 1.3 },
     },
     surfaceSpeed: {
@@ -113,7 +115,8 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Patio]: 1,
       [Surface.Sand]: 0.4,
       [Surface.Mud]: 1,
-      [Surface.Rock]: 0.9,
+      [Surface.Rock]: 1,
+      [Surface.Gravel]: 0.6,
       [Surface.Water]: 1,
     },
   },
@@ -151,7 +154,8 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Patio]: 1,
       [Surface.Sand]: 0.5,
       [Surface.Mud]: 1,
-      [Surface.Rock]: 0.5,
+      [Surface.Rock]: 1,
+      [Surface.Gravel]: 0.65,
       [Surface.Water]: 1,
     },
   },

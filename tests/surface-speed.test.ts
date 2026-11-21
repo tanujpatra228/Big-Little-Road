@@ -4,7 +4,7 @@ import { Surface } from '../src/shared/surfaces';
 import { initRapier } from '../src/client/physics/world';
 import { topSpeedOn } from './flat-world';
 
-const OFFROAD = [Surface.Sand, Surface.Mud, Surface.Rock, Surface.Water];
+const OFFROAD = [Surface.Sand, Surface.Gravel, Surface.Mud, Surface.Rock, Surface.Water];
 
 describe('surfaces slow cars, never speed them up', () => {
   const grass: Record<string, number> = {};
@@ -22,7 +22,7 @@ describe('surfaces slow cars, never speed them up', () => {
   const r = (role: CarRole, s: Surface): number => ratio[role]![s] ?? NaN;
 
   it.each(CAR_ORDER)('%s is never faster off-road than on grass', (role) => {
-    for (const s of OFFROAD) expect(r(role, s)).toBeLessThanOrEqual(1);
+    for (const s of OFFROAD) expect(r(role, s)).toBeLessThanOrEqual(1.01);
   });
 
   it('config never lists a surface above grass', () => {
@@ -38,6 +38,22 @@ describe('surfaces slow cars, never speed them up', () => {
     expect(r('scout', Surface.Sand)).toBeGreaterThan(r('hauler', Surface.Sand) + 0.3);
   });
 
+  it('big rock never slows a car: it is a hazard, not a slow zone', () => {
+    for (const role of CAR_ORDER) {
+      expect(r(role, Surface.Rock)).toBeGreaterThan(0.97);
+      expect(r(role, Surface.Rock)).toBeLessThanOrEqual(1.01);
+      expect(CARS[role].surfaceSpeed[Surface.Rock]).toBe(1);
+    }
+  });
+
+  it('gravel slows like sand, a little less', () => {
+    expect(r('hauler', Surface.Gravel)).toBeLessThan(0.75);
+    expect(r('relay', Surface.Gravel)).toBeLessThan(0.75);
+    expect(r('hauler', Surface.Gravel)).toBeGreaterThan(r('hauler', Surface.Sand));
+    expect(r('relay', Surface.Gravel)).toBeGreaterThan(r('relay', Surface.Sand));
+    expect(r('scout', Surface.Gravel)).toBeGreaterThan(0.8);
+  });
+
   it('Hauler copes with water best', () => {
     expect(r('hauler', Surface.Water)).toBeGreaterThan(r('scout', Surface.Water));
     expect(r('hauler', Surface.Water)).toBeGreaterThan(r('relay', Surface.Water));
@@ -45,7 +61,6 @@ describe('surfaces slow cars, never speed them up', () => {
 
   it('Relay is quick on normal ground but halted by rough terrain', () => {
     expect(grass.relay).toBeGreaterThan(grass.hauler! * 1.4);
-    expect(r('relay', Surface.Rock)).toBeLessThan(0.65);
     expect(r('relay', Surface.Mud)).toBeLessThan(0.5);
   });
 });

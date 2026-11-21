@@ -34,11 +34,13 @@ Nothing in Phase 2 starts until this passes.
 
 Top speed as a share of each car's grass speed, from the flat-world tests. No surface makes any car faster than grass.
 
-| Car | Sand | Mud | Rock | Water |
-|---|---|---|---|---|
-| Scout | 87% | 20% | 77% | 12% |
-| Hauler | 39% | 83% | 92% | 54% |
-| Relay | 45% | 36% | 53% | 21% |
+| Car | Sand | Gravel | Mud | Rock | Water |
+|---|---|---|---|---|---|
+| Scout | 87% | 89% | 20% | 100% | 12% |
+| Hauler | 39% | 58% | 83% | 100% | 54% |
+| Relay | 45% | 59% | 36% | 100% | 21% |
+
+Rock is deliberately 100%: big rock is a hazard, not a slow zone. Slowing cars down there would do the driving for the player. The rock field has 38 solid boulders (real colliders, same list as the visuals) that crash and throw cars around, with gaps wider than the Hauler (about 1.6) so there is always a way through. Loose stones around the field are Gravel, which slows like sand. A scripted driver with simple boulder avoidance crosses the field from 5 to 7 of 8 directions per car, and a blind one gets pinned or flipped, which is the intended difference.
 
 ## Known issues going in
 

@@ -30,7 +30,7 @@ interface Zone {
 const PATIO: Zone = { x: 0, z: 0, r: 11 };
 const SAND: Zone = { x: 46, z: 34, r: 28 };
 const MUD: Zone = { x: -42, z: 30, r: 20 };
-const ROCK: Zone = { x: -46, z: -44, r: 22 };
+export const ROCK: Readonly<Zone> = { x: -46, z: -44, r: 22 };
 const POND: Zone = { x: 42, z: -42, r: 15 };
 const WOODPILE: Zone = { x: 0, z: 56, r: 27 };
 
@@ -58,7 +58,7 @@ export function generateTerrain(seed: number): Terrain {
     h = h * (1 - mud) + mud * (-1.6 + noise(x * 0.2, z * 0.2, 2) * 0.35);
 
     const rock = mask(ROCK, x, z, 8);
-    h += rock * (2.5 + Math.abs(noise(x * 0.18, z * 0.18, 3)) * 5.5);
+    h += rock * (1.2 + (noise(x * 0.14, z * 0.14, 3) + 1) * 1.6);
 
     const pond = mask(POND, x, z, 8);
     h = h * (1 - pond) + pond * (-3.2 + noise(x * 0.1, z * 0.1, 2) * 0.5);
@@ -80,7 +80,9 @@ export function generateTerrain(seed: number): Terrain {
     if (mask(PATIO, x, z, 6) > 0.5) return Surface.Patio;
     if (mask(POND, x, z, 8) > 0.35 && h < WATER_LEVEL + 0.4) return Surface.Water;
     if (mask(MUD, x, z, 9) > 0.45) return Surface.Mud;
-    if (mask(ROCK, x, z, 8) > 0.45) return Surface.Rock;
+    const rock = mask(ROCK, x, z, 8);
+    if (rock > 0.7) return Surface.Rock; // boulder field core
+    if (rock > 0.25) return Surface.Gravel; // loose stones around it
     if (mask(SAND, x, z, 12) > 0.45) return Surface.Sand;
     if (mask(WOODPILE, x, z, 23) > 0.7) return Surface.Rock;
     return Surface.Grass;

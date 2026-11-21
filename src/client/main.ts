@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { CARS, CAR_ORDER, cloneSpec, type CarRole, type CarSpec } from '../shared/cars';
 import { generateTerrain, SPAWN } from '../shared/terrain';
+import { generateBoulders } from '../shared/boulders';
 import { createPhysicsWorld, FIXED_DT, initRapier, type PhysicsWorld } from './physics/world';
 import { FLIP_RESET_SECONDS, Vehicle } from './physics/vehicle';
-import { buildTerrainMesh } from './render/terrain-mesh';
+import { buildBoulderMesh, buildTerrainMesh } from './render/terrain-mesh';
 import { CarMesh } from './render/car-mesh';
 import { ChaseCam } from './render/chase-cam';
 import { InputDevices } from './game/input';
@@ -16,7 +17,8 @@ const params = new URLSearchParams(location.search);
 async function boot(): Promise<void> {
   await initRapier();
   const terrain = generateTerrain(SEED);
-  const pw: PhysicsWorld = createPhysicsWorld(terrain);
+  const boulders = generateBoulders(terrain);
+  const pw: PhysicsWorld = createPhysicsWorld(terrain, boulders);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -37,7 +39,7 @@ async function boot(): Promise<void> {
   sc.near = 1;
   sc.far = 120;
   scene.add(sun, sun.target);
-  scene.add(buildTerrainMesh(terrain));
+  scene.add(buildTerrainMesh(terrain), buildBoulderMesh(boulders));
 
   const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 400);
   const chase = new ChaseCam(camera, terrain);
