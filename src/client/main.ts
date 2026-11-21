@@ -297,6 +297,8 @@ async function boot(): Promise<void> {
       vehicle.step(input.read(FIXED_DT), FIXED_DT);
       pw.world.step();
       vehicle.afterPhysics();
+      const hard = tether.constrain(FIXED_DT);
+      vehicle.changeVelocity(hard.x, hard.z);
       acc -= FIXED_DT;
       steps++;
     }

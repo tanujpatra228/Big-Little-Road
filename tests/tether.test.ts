@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEADBAND, PLANK, RAMP_SNAP_ANGLE, REST_SPACING, ROPE_MAX_ACCEL, carriedPose, forward, hitchPoint, hitchToward, nearestFreeEnd,
-  plankEnds, ropeAccel, snapRamp, trailFarEnd, trailingPose, type PlankPose, type Vec2,
+  DEADBAND, HARD_SQUEEZE, HARD_STRETCH, LEASH_MAX_ACCEL, PLANK, RAMP_SNAP_ANGLE, REST_SPACING, ROPE_MAX_ACCEL, carriedPose, forward, hitchPoint, hitchToward, nearestFreeEnd,
+  plankEnds, ropeAccel, ropeLeash, ropeTension, snapRamp, trailFarEnd, trailingPose, type PlankPose, type Vec2,
 } from '../src/shared/tether';
 
 const near = (a: number, b: number, tol = 1e-6): void => expect(Math.abs(a - b)).toBeLessThan(tol);
@@ -205,5 +205,132 @@ describe('rope stays stable with a delayed view of the partner (the week-4 risk)
 
   it('even a hard sustained shove never lets the cars drift apart without bound', () => {
     expect(simulate(0.5, 12).maxSep).toBeLessThan(REST_SPACING + 14);
+  });
+});
+
+
+describe('hard limit (the plank does not stretch)', () => {
+  const dt = 1 / 60;
+
+  it('does nothing while the rope is slack', () => {
+    const dv = ropeLeash({ x: 0, z: 0 }, { x: -REST_SPACING, z: 0 }, { x: 1, z: 0 }, { x: 0, z: 0 }, dt);
+    expect(dv).toEqual({ x: 0, z: 0 });
+  });
+
+  it('stops a car pulling apart once it reaches the limit', () => {
+    const at = REST_SPACING + HARD_STRETCH;
+    const dv = ropeLeash({ x: at, z: 0 }, { x: 0, z: 0 }, { x: 6, z: 0 }, { x: 0, z: 0 }, dt);
+    expect(dv.x).toBeLessThan(0);
+    expect(dv.z).toBeCloseTo(0);
+  });
+
+  it('lets a car move apart at the partner pace, so a convoy is not held back', () => {
+    const at = REST_SPACING + HARD_STRETCH;
+    const dv = ropeLeash({ x: at, z: 0 }, { x: 0, z: 0 }, { x: 8, z: 0 }, { x: 8, z: 0 }, dt);
+    expect(dv).toEqual({ x: 0, z: 0 });
+  });
+
+  it('lets a car come back in when it is over the limit', () => {
+    const dv = ropeLeash({ x: REST_SPACING + 2, z: 0 }, { x: 0, z: 0 }, { x: -3, z: 0 }, { x: 0, z: 0 }, dt);
+    expect(dv).toEqual({ x: 0, z: 0 });
+  });
+
+  it('stops cars driving into each other', () => {
+    const at = REST_SPACING - HARD_SQUEEZE;
+    const dv = ropeLeash({ x: at, z: 0 }, { x: 0, z: 0 }, { x: -5, z: 0 }, { x: 0, z: 0 }, dt);
+    expect(dv.x).toBeGreaterThan(0);
+  });
+
+  it('never pushes harder than the cap', () => {
+    const dv = ropeLeash({ x: REST_SPACING + 5, z: 0 }, { x: 0, z: 0 }, { x: 30, z: 0 }, { x: 0, z: 0 }, dt);
+    expect(Math.hypot(dv.x, dv.z)).toBeLessThanOrEqual(LEASH_MAX_ACCEL * dt + 1e-9);
+  });
+
+  it('works in any direction, not only along x', () => {
+    const at = REST_SPACING + HARD_STRETCH;
+    const s = Math.SQRT1_2;
+    const dv = ropeLeash({ x: at * s, z: at * s }, { x: 0, z: 0 }, { x: 5 * s, z: 5 * s }, { x: 0, z: 0 }, dt);
+    expect(dv.x).toBeLessThan(0);
+    expect(dv.x).toBeCloseTo(dv.z);
+  });
+
+  it('tension reads 0 slack and 1 at the limit', () => {
+    expect(ropeTension(REST_SPACING)).toBe(0);
+    expect(ropeTension(REST_SPACING + HARD_STRETCH)).toBe(1);
+    expect(ropeTension(REST_SPACING - HARD_SQUEEZE)).toBe(1);
+  });
+
+  /**
+   * Two cars on a line, both flooring it away from each other for 6 seconds, each seeing the other
+   * `delay` seconds late and extrapolating by `lead`. Worst gap between the hitches is returned.
+   */
+  function pullApart(delay: number, lead: number, topSpeed = 14): { maxSep: number; endSep: number } {
+    const steps = 60 * 8;
+    const lag = Math.round(delay / dt);
+    const a = { x: 0, v: 0 };
+    const b = { x: REST_SPACING, v: 0 };
+    const histA: Array<[number, number]> = [];
+    const histB: Array<[number, number]> = [];
+    let maxSep = 0;
+    for (let i = 0; i < steps; i++) {
+      histA.push([a.x, a.v]);
+      histB.push([b.x, b.v]);
+      const [bx, bv] = histB[Math.max(0, histB.length - 1 - lag)]!;
+      const [ax, av] = histA[Math.max(0, histA.length - 1 - lag)]!;
+      const drive = i >= 30 ? 9 : 0; // both players floor it away from each other after half a second
+      // The leash runs after the engine has had its say, like the game does after each physics step.
+      a.v = Math.max(-topSpeed, a.v - drive * dt);
+      b.v = Math.min(topSpeed, b.v + drive * dt);
+      a.v += ropeLeash({ x: a.x, z: 0 }, { x: bx + bv * lead, z: 0 }, { x: a.v, z: 0 }, { x: bv, z: 0 }, dt).x;
+      b.v += ropeLeash({ x: b.x, z: 0 }, { x: ax + av * lead, z: 0 }, { x: b.v, z: 0 }, { x: av, z: 0 }, dt).x;
+      a.x += a.v * dt;
+      b.x += b.v * dt;
+      maxSep = Math.max(maxSep, b.x - a.x);
+    }
+    return { maxSep, endSep: b.x - a.x };
+  }
+
+  const LIMIT = REST_SPACING + HARD_STRETCH;
+
+  it.each([0, 0.1, 0.2, 0.3, 0.5])('holds the limit at %s s delay when the lead matches', (delay) => {
+    const r = pullApart(delay, delay);
+    // Overshoot is only what the partner changed its mind about during the delay.
+    expect(r.maxSep).toBeLessThan(LIMIT + 0.05 + 1.2 * delay);
+    expect(r.endSep).toBeLessThan(LIMIT + 0.05 + 1.2 * delay);
+  });
+
+  it('is tight when there is no delay', () => {
+    expect(pullApart(0, 0).maxSep).toBeLessThan(LIMIT + 0.05);
+  });
+
+  it('without extrapolation the overshoot is what the lead was for', () => {
+    expect(pullApart(0.3, 0).maxSep).toBeGreaterThan(pullApart(0.3, 0.3).maxSep);
+  });
+
+  it('never touches two cars driving along together at speed', () => {
+    for (const gap of [REST_SPACING - 0.6, REST_SPACING, REST_SPACING + 0.9]) {
+      const dv = ropeLeash({ x: gap, z: 0 }, { x: 0, z: 0 }, { x: 12, z: 0 }, { x: 12, z: 0 }, dt);
+      expect(dv).toEqual({ x: 0, z: 0 });
+    }
+  });
+
+  it('a lead car at the limit stops when the car behind stops, without reversing', () => {
+    const at = REST_SPACING + HARD_STRETCH;
+    let v = 10;
+    for (let i = 0; i < 60; i++) v += ropeLeash({ x: at, z: 0 }, { x: 0, z: 0 }, { x: v, z: 0 }, { x: 0, z: 0 }, dt).x;
+    expect(v).toBeCloseTo(0, 6);
+  });
+
+  it('a solo car driving away from a parked partner stops at the limit', () => {
+    const steps = 60 * 6;
+    const a = { x: 0, v: 0 };
+    let max = 0;
+    for (let i = 0; i < steps; i++) {
+      a.v = Math.min(14, a.v + 9 * dt);
+      a.v += ropeLeash({ x: a.x, z: 0 }, { x: -REST_SPACING, z: 0 }, { x: a.v, z: 0 }, { x: 0, z: 0 }, dt).x;
+      a.x += a.v * dt;
+      max = Math.max(max, a.x + REST_SPACING);
+    }
+    expect(max).toBeLessThan(LIMIT + 0.15);
   });
 });

@@ -124,6 +124,53 @@ export function ropeAccel(self: Vec2, partner: Vec2, velocity: Vec2): Vec2 {
   return { x: ux * a, z: uz * a };
 }
 
+/** The plank cannot stretch: hitch-to-hitch distance may exceed REST_SPACING by at most this. */
+export const HARD_STRETCH = 1.0;
+/** Nor can it be squeezed: the hitches may come this much closer than REST_SPACING at most. */
+export const HARD_SQUEEZE = 1.2;
+/** How early the leash starts braking: allowed closing speed = gain * distance left (1/s). */
+export const LEASH_GAIN = 5;
+/** Strongest push the leash may give, m/s^2. About 8 g, like hitting the end of a chain. */
+export const LEASH_MAX_ACCEL = 80;
+
+/**
+ * The hard limit of a plank that does not stretch. Returns the velocity change for our own car this
+ * physics step so the hitches never get further than REST_SPACING + HARD_STRETCH apart, or closer
+ * than REST_SPACING - HARD_SQUEEZE. It only ever removes our own relative motion that would make
+ * things worse, never reverses us and never tows the partner (the soft rope does that), so two browsers applying
+ * it to their own cars cannot fight each other, even when each sees the other a few hundred
+ * milliseconds late.
+ * `partner` and `vPartner` should already be extrapolated to where the partner is now.
+ */
+export function ropeLeash(self: Vec2, partner: Vec2, vSelf: Vec2, vPartner: Vec2, dt: number): Vec2 {
+  const dx = self.x - partner.x;
+  const dz = self.z - partner.z;
+  const d = hypot(dx, dz);
+  if (d < 1e-6) return { x: 0, z: 0 };
+  const nx = dx / d;
+  const nz = dz / d;
+  const rate = (vSelf.x - vPartner.x) * nx + (vSelf.z - vPartner.z) * nz; // positive: pulling apart
+  const maxRate = Math.max(0, LEASH_GAIN * (REST_SPACING + HARD_STRETCH - d));
+  const minRate = -Math.max(0, LEASH_GAIN * (d - (REST_SPACING - HARD_SQUEEZE)));
+  const own = vSelf.x * nx + vSelf.z * nz; // our own speed away from the partner
+  let dv = 0;
+  // Only our own motion that makes it worse is removed, never more, so a stale view of the partner
+  // can at worst stop us, not throw us back at it.
+  if (rate > maxRate) dv = -Math.min(Math.max(own, 0), rate - maxRate);
+  else if (rate < minRate) dv = Math.min(Math.max(-own, 0), minRate - rate);
+  if (dv === 0) return { x: 0, z: 0 };
+  const cap = LEASH_MAX_ACCEL * dt;
+  dv = Math.max(-cap, Math.min(cap, dv));
+  return { x: nx * dv, z: nz * dv };
+}
+
+/** 0 when the rope is slack, up to 1 when the leash is fully taut or fully squeezed. For visuals. */
+export function ropeTension(d: number): number {
+  const stretch = (d - REST_SPACING - DEADBAND) / (HARD_STRETCH - DEADBAND);
+  const squeeze = (REST_SPACING - DEADBAND - d) / (HARD_SQUEEZE - DEADBAND);
+  return Math.max(0, Math.min(1, Math.max(stretch, squeeze)));
+}
+
 /**
  * One car alone drags the plank behind it like a stick on a string: the far end only moves when
  * the string goes taut. Deterministic from the hitch path, so every browser draws about the same.

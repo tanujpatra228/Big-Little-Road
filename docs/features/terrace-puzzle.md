@@ -6,7 +6,7 @@ A round brick platform stands on the lawn east of the patio, with a glowing beac
 
 1. Drive to the plank (it lies on the lawn just east of the patio, around 17 m east of the spawn). Get near an end and press **F** to hook it. A prompt appears when you are close.
 2. A second player hooks the other end. The plank hangs between you. A convoy works: the car in front holds it by its tail, the car behind holds it by its nose, like carrying a stretcher. Side by side works too.
-3. Drive to the platform wall and keep the rope slack: it pulls gently if you drift more than about half a metre from the ideal spacing (about 5 m between the hooks).
+3. Drive to the platform wall and keep the rope slack: it pulls gently if you drift more than about half a metre from the ideal spacing (about 5 m between the hooks). The plank cannot stretch: you cannot get further than about 1 m beyond that spacing, and the ropes turn red as you near it. Drive in step.
 4. Near the wall a green ghost plank appears, showing where it will lean if you let go now, and the prompt says so. Press **F** (both of you) to set it down: it snaps into a proper ramp with its far end on the platform top.
 5. Drive up the plank to the beacon. Everyone gets fireworks, a fanfare, and a message saying who made it.
 

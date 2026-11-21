@@ -20,6 +20,8 @@ export class RemoteCar {
   readonly position = new THREE.Vector3();
   /** Heading, radians, 0 along +z. */
   yaw = 0;
+  /** Ground velocity drawn right now, m/s, from the pose's signed speed and heading. */
+  readonly velocity = { x: 0, z: 0 };
   private body: RemoteBody;
   private readonly label: THREE.Sprite;
   private spin = 0;
@@ -64,6 +66,8 @@ export class RemoteCar {
     this.xform.setPose({ x: s.x, y: s.y, z: s.z, qx: s.qx, qy: s.qy, qz: s.qz, qw: s.qw });
     this.position.set(s.x, s.y, s.z);
     this.yaw = Math.atan2(2 * (s.qw * s.qy + s.qx * s.qz), 1 - 2 * (s.qy * s.qy + s.qz * s.qz));
+    this.velocity.x = Math.sin(this.yaw) * s.v;
+    this.velocity.z = Math.cos(this.yaw) * s.v;
     this.body.moveTo(s);
     this.spin += (s.v / spec.wheelRadius) * dt;
 

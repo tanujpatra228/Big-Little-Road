@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { CARS, type CarRole } from '../../shared/cars';
 import { PROPS, PropsLogic, fromInfo, type PropInfo } from '../../shared/net/props';
 import type { Terrain } from '../../shared/terrain';
-import { nearestFreeEnd, ropeAccel, snapRamp } from '../../shared/tether';
+import { nearestFreeEnd, ropeAccel, ropeLeash, ropeTension, snapRamp } from '../../shared/tether';
 import type { GameAudio } from '../audio/game-audio';
 import type { RemoteCar } from '../net/remote-car';
 import type { RoomClient } from '../net/room-client';
@@ -33,6 +33,8 @@ export class TetherController {
   /** Text for the on-screen prompt, or null. */
   prompt: string | null = null;
   private local = new PropsLogic();
+  /** Where the hard limit measures from, refreshed every frame while both cars hold the plank. */
+  private leash: { offX: number; offZ: number; px: number; pz: number; pvx: number; pvz: number } | null = null;
 
   constructor(private readonly d: TetherDeps) {
     this.plank = new PlankProp(d.scene, d.pw, d.terrain, this.local.props.get(PLANK_ID)!);
@@ -113,6 +115,19 @@ export class TetherController {
     else if (this.local.reset(PLANK_ID)) this.plank.setState(this.local.props.get(PLANK_ID)!);
   }
 
+  /**
+   * The plank does not stretch. Call after every physics step: the velocity change for our own car
+   * that keeps the two hitches within the plank's reach. Zero unless both cars hold it.
+   */
+  constrain(dt: number): { x: number; z: number } {
+    const l = this.leash;
+    if (!l) return { x: 0, z: 0 };
+    const body = this.d.vehicle().body;
+    const t = body.translation();
+    const v = body.linvel();
+    return ropeLeash({ x: t.x + l.offX, z: t.z + l.offZ }, { x: l.px, z: l.pz }, { x: v.x, z: v.z }, { x: l.pvx, z: l.pvz }, dt);
+  }
+
   /** Call once per frame before the physics steps. Returns the pull on our car, in m/s^2. */
   update(): { x: number; z: number } {
     this.plank.update((id) => this.carOf(id));
@@ -121,14 +136,28 @@ export class TetherController {
     const holding = h0 === me || h1 === me;
 
     let pull = { x: 0, z: 0 };
+    this.leash = null;
+    let tension = 0;
     if (h0 && h1 && holding) {
+      const partnerId = h0 === me ? h1 : h0;
       const a = this.plank.hitchOf(me);
-      const b = this.plank.hitchOf(h0 === me ? h1 : h0);
+      const b = this.plank.hitchOf(partnerId);
       if (a && b) {
-        const v = this.d.vehicle().body.linvel();
+        const body = this.d.vehicle().body;
+        const v = body.linvel();
         pull = ropeAccel({ x: a.x, z: a.z }, { x: b.x, z: b.z }, { x: v.x, z: v.z });
+
+        // The partner is drawn a little in the past and the link adds delay. Look ahead by that much
+        // along their velocity, so the hard limit holds against where they are, not where they were.
+        const r = this.online() ? this.d.remotes().get(partnerId) : undefined;
+        const vp = r ? r.velocity : { x: 0, z: 0 };
+        const lead = r ? 0.1 + this.d.net().rttMs / 2000 : 0;
+        const t = body.translation();
+        this.leash = { offX: a.x - t.x, offZ: a.z - t.z, px: b.x + vp.x * lead, pz: b.z + vp.z * lead, pvx: vp.x, pvz: vp.z };
+        tension = ropeTension(Math.hypot(a.x - b.x, a.z - b.z));
       }
     }
+    this.plank.setTension(tension);
 
     // Near the platform wall, show where the plank would lean if let go now.
     const snap = holding ? snapRamp(this.plank.displayPose) : null;

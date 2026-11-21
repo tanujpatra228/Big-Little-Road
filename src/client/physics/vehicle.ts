@@ -277,6 +277,13 @@ export class Vehicle {
     this.body.applyImpulse({ x: m * ax * dt, y: 0, z: m * az * dt }, true);
   }
 
+  /** Adds to the car's ground velocity right away, e.g. the plank's hard limit. Call after the physics step. */
+  changeVelocity(dx: number, dz: number): void {
+    if (dx === 0 && dz === 0) return;
+    const v = this.body.linvel();
+    this.body.setLinvel({ x: v.x + dx, y: v.y, z: v.z + dz }, true);
+  }
+
   /** The hardest impact since the last call, or null. Read once per frame. */
 
   consumeImpact(): Impact | null {

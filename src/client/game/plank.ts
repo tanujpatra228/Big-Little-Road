@@ -7,6 +7,9 @@ import {
 } from '../../shared/tether';
 import type { PhysicsWorld } from '../physics/world';
 
+const ROPE_SLACK = new THREE.Color(0x2b2b2b);
+const ROPE_TAUT = new THREE.Color(0xe0412f);
+
 /** What the plank needs to know about a car that is holding it. */
 export interface CarInfo {
   x: number;
@@ -38,6 +41,7 @@ export class PlankProp {
   private collider: RAPIER.Collider | null = null;
   private colliderKey = '';
   private readonly ropes: [THREE.Line, THREE.Line];
+  private readonly ropeMat: THREE.LineBasicMaterial;
   private readonly ghost: THREE.Mesh;
   private readonly hitches = new Map<string, HitchInfo>();
 
@@ -69,7 +73,7 @@ export class PlankProp {
     }
     scene.add(this.group);
 
-    const ropeMat = new THREE.LineBasicMaterial({ color: 0x2b2b2b });
+    const ropeMat = (this.ropeMat = new THREE.LineBasicMaterial({ color: ROPE_SLACK }));
     const mk = (): THREE.Line => {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), ropeMat);
       line.frustumCulled = false;
@@ -196,6 +200,11 @@ export class PlankProp {
       attr.setXYZ(1, e.x, this.terrain.heightAt(e.x, e.z) + 0.3, e.z);
       attr.needsUpdate = true;
     }
+  }
+
+  /** 0 slack to 1 at the hard limit: the ropes go from dark to red. */
+  setTension(t: number): void {
+    this.ropeMat.color.copy(ROPE_SLACK).lerp(ROPE_TAUT, t);
   }
 
   dispose(): void {
