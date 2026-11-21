@@ -46,6 +46,7 @@ No phase starts until the previous gate passes.
 - Gate: a public URL renders a spinning cube in under 10 s cold.
 
 ### Phase 1: Car feel (week 1)
+Status: code complete, gate pending human playtest. Protocol in `docs/phase-1-playtest.md`.
 - Heightfield terrain from a seed and small heightmap; terrain surface types (grass, sand, mud, rock, water) as a lookup on the heightfield.
 - Rapier raycast vehicle with soft suspension; per-surface grip and drag; Scout, Hauler, Relay as parameter sets, not separate code.
 - Chase camera, keyboard and gamepad input, flip detection.
