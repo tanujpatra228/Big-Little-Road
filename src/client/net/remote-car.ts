@@ -4,7 +4,7 @@ import { dequantizePose } from '../../shared/net/pose';
 import type { PlayerInfo, PoseFrame } from '../../shared/net/protocol';
 import { SnapshotBuffer } from '../../shared/net/snapshot-buffer';
 import type { WheelState } from '../physics/vehicle';
-import { CarMesh } from '../render/car-mesh';
+import { CarTransformer } from '../render/car-transformer';
 import { RemoteBody } from '../physics/vehicle';
 import type { PhysicsWorld } from '../physics/world';
 
@@ -13,7 +13,9 @@ export class RemoteCar {
   readonly buffer = new SnapshotBuffer();
   name: string;
   role: CarRole;
-  mesh: CarMesh;
+  private xform: CarTransformer;
+  /** Fires when this car transforms, so the game can play the sound near it. */
+  onTransform: (() => void) | null = null;
   /** Last drawn position, for placing sounds. */
   readonly position = new THREE.Vector3();
   /** Heading, radians, 0 along +z. */
@@ -21,28 +23,32 @@ export class RemoteCar {
   private body: RemoteBody;
   private readonly label: THREE.Sprite;
   private spin = 0;
+  private shown = false;
 
   constructor(private readonly scene: THREE.Scene, private readonly pw: PhysicsWorld, info: PlayerInfo) {
     this.name = info.name;
     this.role = info.role;
-    this.mesh = new CarMesh(CARS[info.role]);
+    this.xform = new CarTransformer(scene, CARS[info.role]);
+    this.xform.onSwap = () => this.onTransform?.();
     this.body = new RemoteBody(pw, CARS[info.role]);
-    this.mesh.group.visible = false; // until the first pose arrives
-    scene.add(this.mesh.group);
+    this.xform.setVisible(false); // until the first pose arrives
     this.label = makeLabel(info.name);
     scene.add(this.label);
   }
 
+  get visible(): boolean {
+    return this.shown;
+  }
+
   setRole(role: CarRole): void {
     if (role === this.role) return;
-    const was = this.mesh.group.visible;
-    this.scene.remove(this.mesh.group);
+    const wasShown = this.shown;
     this.role = role;
-    this.mesh = new CarMesh(CARS[role]);
     this.body.dispose();
     this.body = new RemoteBody(this.pw, CARS[role]);
-    this.mesh.group.visible = was;
-    this.scene.add(this.mesh.group);
+    if (wasShown) this.xform.transformTo(CARS[role], { x: 0, z: 0 });
+    else this.xform.reset(CARS[role]);
+    this.xform.setVisible(wasShown);
   }
 
   push(frame: PoseFrame, at: number): void {
@@ -53,8 +59,9 @@ export class RemoteCar {
     const s = this.buffer.sample(now);
     if (!s) return;
     const spec = CARS[this.role];
-    this.mesh.group.visible = true;
-    this.mesh.setPose({ x: s.x, y: s.y, z: s.z, qx: s.qx, qy: s.qy, qz: s.qz, qw: s.qw });
+    this.shown = true;
+    this.xform.setVisible(true);
+    this.xform.setPose({ x: s.x, y: s.y, z: s.z, qx: s.qx, qy: s.qy, qz: s.qz, qw: s.qw });
     this.position.set(s.x, s.y, s.z);
     this.yaw = Math.atan2(2 * (s.qw * s.qy + s.qx * s.qz), 1 - 2 * (s.qy * s.qy + s.qz * s.qz));
     this.body.moveTo(s);
@@ -65,13 +72,14 @@ export class RemoteCar {
     for (const [sx, sz, front] of [[1, 1, true], [-1, 1, true], [1, -1, false], [-1, -1, false]] as const) {
       wheels.push({ x: sx * spec.trackHalf, y, z: sz * spec.wheelBaseHalf, steer: front ? s.steer : 0, spin: this.spin, contact: true });
     }
-    this.mesh.setWheels(wheels);
+    this.xform.setWheels(wheels);
+    this.xform.tick(dt);
     this.label.position.set(s.x, s.y + 1.5, s.z);
   }
 
   dispose(): void {
     this.body.dispose();
-    this.scene.remove(this.mesh.group);
+    this.xform.dispose();
     this.scene.remove(this.label);
     (this.label.material as THREE.SpriteMaterial).map?.dispose();
     this.label.material.dispose();

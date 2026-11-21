@@ -8,6 +8,9 @@ import type { PhysicsWorld } from './world';
 const WHEELS = 4;
 export const FLIP_RESET_SECONDS = 10;
 const FIXED_STEP = 1 / 60;
+/** After switching car, over-speed drag is a quarter strength for this many seconds. */
+export const MOMENTUM_GRACE_SECONDS = 1.5;
+const MOMENTUM_GRACE_DRAG = 0.25;
 
 export interface Pose {
   x: number; y: number; z: number;
@@ -83,6 +86,8 @@ export class Vehicle {
   private velBefore = { x: 0, y: 0, z: 0 };
   private impact: Impact | null = null;
   private pulled = false;
+  /** Seconds left of gentle over-speed drag after turning into another car, so momentum carries over. */
+  private grace = 0;
 
   constructor(pw: PhysicsWorld, spec: CarSpec, x: number, z: number, yaw: number) {
     this.pw = pw;
@@ -167,7 +172,8 @@ export class Vehicle {
     const top = spec.topSpeed * speedFrac;
     const reverseTop = spec.reverseTopSpeed * speedFrac;
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
-    drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3);
+    drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3) * (this.grace > 0 ? MOMENTUM_GRACE_DRAG : 1);
+    this.grace = Math.max(0, this.grace - dt);
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
     const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
     this.pulled = false;
@@ -222,6 +228,45 @@ export class Vehicle {
     const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
     const stuckUpsideDown = upY < 0.3 && Math.abs(this.speed) < 2.5;
     this.flippedFor = stuckUpsideDown ? this.flippedFor + dt : 0;
+  }
+
+  /** Chassis height above the ground at rest: wheel radius, suspension and half the body. */
+  static rideHeight(spec: CarSpec): number {
+    return spec.wheelRadius + spec.suspensionRest + spec.half.y;
+  }
+
+  /** Current steering command in radians, so a transformed car keeps its wheels turned. */
+  get steerCommand(): number {
+    return this.steerCmd;
+  }
+
+  /**
+   * Turns this car into another one without losing its motion. The new body appears where the old
+   * one was, with the same orientation (even if it is tilted or spinning in the air), the same
+   * velocity and spin, and the same steering. Only the ride height is adjusted, so the new wheels
+   * do not start inside the ground. If the new car's top speed is lower, the existing over-speed
+   * drag slows it down smoothly instead of stopping it.
+   */
+  static transformFrom(pw: PhysicsWorld, old: Vehicle, spec: CarSpec): Vehicle {
+    const t = old.body.translation();
+    const q = old.body.rotation();
+    const lv = old.body.linvel();
+    const av = old.body.angvel();
+    const steer = old.steerCmd;
+    const dy = Vehicle.rideHeight(spec) - Vehicle.rideHeight(old.spec);
+    old.dispose();
+
+    const next = new Vehicle(pw, spec, t.x, t.z, 0);
+    next.body.setTranslation({ x: t.x, y: t.y + dy, z: t.z }, true);
+    next.body.setRotation(q, true);
+    next.body.setLinvel(lv, true);
+    next.body.setAngvel(av, true);
+    next.steerCmd = steer;
+    next.velBefore = { x: lv.x, y: lv.y, z: lv.z }; // so the swap itself is not mistaken for a crash
+    next.speed = old.speed;
+    next.grace = MOMENTUM_GRACE_SECONDS;
+    next.cur = next.prev = next.readPose();
+    return next;
   }
 
   /** Pushes the car along the ground as an acceleration, e.g. from a rope. Call once per physics step. */

@@ -74,7 +74,7 @@ export class TetherController {
       return { x: h.x, y: t.y - 0.1, z: h.z };
     }
     const r = this.d.remotes().get(id);
-    if (!r || !r.mesh.group.visible) return null;
+    if (!r || !r.visible) return null;
     const h = hitchPoint({ x: r.position.x, z: r.position.z }, r.yaw, CARS[r.role].half.z);
     return { x: h.x, y: r.position.y - 0.1, z: h.z };
   }

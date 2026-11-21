@@ -6,7 +6,7 @@ import { createPhysicsWorld, FIXED_DT, initRapier, type PhysicsWorld } from './p
 import { FLIP_RESET_SECONDS, Vehicle } from './physics/vehicle';
 import { buildBoulderMesh, buildTerrainMesh } from './render/terrain-mesh';
 import { buildGrass } from './render/grass';
-import { CarMesh } from './render/car-mesh';
+import { CarTransformer } from './render/car-transformer';
 import { ChaseCam } from './render/chase-cam';
 import { InputDevices } from './game/input';
 import { createStage } from './render/stage';
@@ -56,21 +56,33 @@ async function boot(): Promise<void> {
   };
   let role: CarRole = 'scout';
   let vehicle: Vehicle;
-  let mesh: CarMesh;
+  let xform: CarTransformer;
   let gravity = 9.81;
 
+  /** Put a fresh car at a spot, upright and still. Used for the first spawn, resets and teleports. */
   const spawn = (r: CarRole, x: number, z: number, yaw: number): void => {
-    if (vehicle) {
-      vehicle.dispose();
-      scene.remove(mesh.group);
-    }
+    if (vehicle) vehicle.dispose();
     const changed = role !== r;
     role = r;
     if (changed) net.sendCar(r);
     vehicle = new Vehicle(pw, specs[r], x, z, yaw);
-    mesh = new CarMesh(specs[r]);
-    scene.add(mesh.group);
+    if (xform) xform.reset(specs[r]);
+    else {
+      xform = new CarTransformer(scene, specs[r]);
+      xform.onSwap = () => audio.transform();
+    }
     chase.snap();
+    tune?.show(specs[r]);
+  };
+
+  /** Change car where you are: same speed, spin and steering, with the transformation animation. */
+  const switchCar = (r: CarRole): void => {
+    if (r === role) return;
+    const v = vehicle.body.linvel();
+    vehicle = Vehicle.transformFrom(pw, vehicle, specs[r]);
+    role = r;
+    net.sendCar(r);
+    xform.transformTo(specs[r], { x: v.x, z: v.z });
     tune?.show(specs[r]);
   };
 
@@ -95,12 +107,7 @@ async function boot(): Promise<void> {
       )
     : null;
 
-  const hud = new Hud((r) => {
-    const t = vehicle.body.translation();
-    const q = vehicle.body.rotation();
-    const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-    spawn(r, t.x, t.z, yaw);
-  });
+  const hud = new Hud(switchCar);
 
   // ---- Multiplayer: every browser drives its own car; the room just relays poses.
   const remotes = new Map<string, RemoteCar>();
@@ -119,7 +126,18 @@ async function boot(): Promise<void> {
     if (p.id === net.selfId) return;
     const existing = remotes.get(p.id);
     if (existing) existing.setRole(p.role);
-    else remotes.set(p.id, new RemoteCar(scene, pw, p));
+    else {
+      const rc = new RemoteCar(scene, pw, p);
+      rc.onTransform = () => {
+        const to = rc.position.clone().sub(camera.position);
+        const d = to.length();
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+        audio.transform(1 / (1 + d / 16), d > 0.01 ? to.normalize().dot(right) : 0);
+      };
+      remotes.set(p.id, rc);
+    }
   };
   const net: RoomClient = new RoomClient(
     {
@@ -212,6 +230,8 @@ async function boot(): Promise<void> {
   (window as unknown as { __blr: unknown }).__blr = {
     get vehicle() { return vehicle; },
     get role() { return role; },
+    switchCar,
+    get xform() { return xform; },
     audio,
     get net() { return net; },
     remotes,
@@ -227,12 +247,7 @@ async function boot(): Promise<void> {
     acc += frame;
 
     CAR_ORDER.forEach((r, i) => {
-      if (input.wasPressed(`Digit${i + 1}`)) {
-        const t = vehicle.body.translation();
-        const q = vehicle.body.rotation();
-        const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-        spawn(r, t.x, t.z, yaw);
-      }
+      if (input.wasPressed(`Digit${i + 1}`)) switchCar(r);
     });
     if (input.wasPressed('KeyR')) {
       if (vehicle.flippedFor >= FLIP_RESET_SECONDS || params.has('debug') || params.has('tune')) vehicle.resetUpright();
@@ -287,7 +302,7 @@ async function boot(): Promise<void> {
       }
     }
     const pose = vehicle.pose(acc / FIXED_DT);
-    mesh.update(vehicle, pose, frame);
+    xform.update(vehicle, pose, frame);
     chase.update(pose, vehicle.speed, frame);
     stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
     hud.setAudio(!audio.running ? 'locked' : audio.isMuted ? 'muted' : 'on');

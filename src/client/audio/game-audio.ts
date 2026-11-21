@@ -494,6 +494,74 @@ export class GameAudio {
     window.setTimeout(() => tail.disconnect(), 600);
   }
 
+  /**
+   * The transformation: a servo whirr that rises then falls, a whoosh of air, and two metallic
+   * clanks as parts lock into place. `gain` and `pan` let other players' transformations sound distant.
+   */
+  transform(gain = 1, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || gain < 0.01) return;
+    const now = ctx.currentTime;
+    let out: AudioNode = this.fxBus;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      p.connect(this.fxBus);
+      out = p;
+      window.setTimeout(() => p.disconnect(), 1200);
+    }
+
+    // Servo whirr
+    const whirr = ctx.createOscillator();
+    whirr.type = 'sawtooth';
+    whirr.frequency.setValueAtTime(180, now);
+    whirr.frequency.exponentialRampToValueAtTime(760, now + 0.24);
+    whirr.frequency.exponentialRampToValueAtTime(300, now + 0.6);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1100;
+    bp.Q.value = 3;
+    const wg = ctx.createGain();
+    wg.gain.setValueAtTime(0.0001, now);
+    wg.gain.linearRampToValueAtTime(0.09 * gain, now + 0.08);
+    wg.gain.setValueAtTime(0.09 * gain, now + 0.4);
+    wg.gain.exponentialRampToValueAtTime(0.0005, now + 0.65);
+    whirr.connect(bp).connect(wg).connect(out);
+    whirr.start(now);
+    whirr.stop(now + 0.7);
+
+    // Whoosh: noise swept up into the flash, then down
+    const air = ctx.createBufferSource();
+    air.buffer = this.noise;
+    const abp = ctx.createBiquadFilter();
+    abp.type = 'bandpass';
+    abp.Q.value = 1.2;
+    abp.frequency.setValueAtTime(400, now);
+    abp.frequency.exponentialRampToValueAtTime(3200, now + 0.25);
+    abp.frequency.exponentialRampToValueAtTime(700, now + 0.6);
+    const ag = ctx.createGain();
+    ag.gain.setValueAtTime(0.0001, now);
+    ag.gain.linearRampToValueAtTime(0.13 * gain, now + 0.22);
+    ag.gain.exponentialRampToValueAtTime(0.0005, now + 0.65);
+    air.connect(abp).connect(ag).connect(out);
+    air.start(now, Math.random());
+    air.stop(now + 0.7);
+
+    // Clanks as it locks: one before the swap, one as the new shape settles
+    for (const [at, hz, level] of [[0.14, 1250, 0.1], [0.3, 820, 0.14]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(hz, now + at);
+      o.frequency.exponentialRampToValueAtTime(hz * 0.55, now + at + 0.09);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(level * gain, now + at);
+      g.gain.exponentialRampToValueAtTime(0.0005, now + at + 0.12);
+      o.connect(g).connect(out);
+      o.start(now + at);
+      o.stop(now + at + 0.14);
+    }
+  }
+
   /** A short metallic click for hooking or letting go of a rope. */
   hook(): void {
     const ctx = this.ctx;
