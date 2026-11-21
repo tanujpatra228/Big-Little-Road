@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { maxWheelRise, wheelRestY, type CarSpec } from '../../shared/cars';
+import { wheelRestY, type CarSpec } from '../../shared/cars';
 
 export type CarVariant = 'standard' | 'rescue';
 
@@ -180,26 +180,12 @@ function badge(text: string, bg: string, fg: string): THREE.Mesh {
   return m;
 }
 
-/**
- * Front and rear lips of a wheel arch. They hang from the fender slab just outside the wheel's
- * footprint (|z| beyond the tyre radius), so a rising wheel passes between them and never clips.
- */
-function archLips(body: Parts, spec: CarSpec, mat: THREE.Material, sx: number, sz: number, slabBottom: number, span: number): void {
-  const lip = 0.26;
-  const reach = (spec.wheelRadius * span) / 2 - 0.025;
-  for (const side of [1, -1]) {
-    body.box(0.38, lip, 0.05, 0.02, mat, sx * (spec.trackHalf - 0.07), slabBottom - lip / 2 + 0.02, sz * spec.wheelBaseHalf + side * reach);
-  }
-}
-
 export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorOverride?: number): CarModel {
   const color = colorOverride ?? spec.color;
   const mats = makeMaterials(spec, color);
   const { x: hx, y: hy, z: hz } = spec.half;
   const body = new Parts();
   const wheelY = wheelRestY(spec);
-  // Flares sit above the wheel's highest point (bump stop), plus a little air.
-  const flareLift = maxWheelRise(spec) + 0.02;
   const rescue = variant === 'rescue';
 
   if (spec.role === 'scout' || rescue) {
@@ -258,10 +244,6 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.cyl(0.07, 0.07, hx * 1.2, mats.metal, 0, -hy * 0.05, hz + 0.17, 0, 0, Math.PI / 2, 12);
     body.box(0.06, 0.1, 0.03, 0.01, mats.accent, hx * 0.5, -hy * 0.15, hz + 0.19);
     body.box(hx * 1.9, hy * 0.4, 0.1, 0.04, mats.dark, 0, -hy * 0.2, -hz - 0.06);
-    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-      body.box(0.38, 0.17, spec.wheelRadius * 2.1, 0.06, mats.paint, sx * (spec.trackHalf - 0.07), wheelY + spec.wheelRadius + flareLift + 0.085, sz * spec.wheelBaseHalf);
-      archLips(body, spec, mats.paint, sx, sz, wheelY + spec.wheelRadius + flareLift, 2.1);
-    }
     const roofY = hy * 2.1 + 0.05;
     body.tube([hx * 0.7, roofY, -hz * 0.6], [hx * 0.7, roofY, hz * 0.2], 0.018, mats.metal);
     body.tube([-hx * 0.7, roofY, -hz * 0.6], [-hx * 0.7, roofY, hz * 0.2], 0.018, mats.metal);
@@ -277,7 +259,7 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(0.12, 0.1, 0.04, 0.02, mats.taillight, hx * 0.8, hy * 0.2, -hz * 0.96);
     body.box(0.12, 0.1, 0.04, 0.02, mats.taillight, -hx * 0.8, hy * 0.2, -hz * 0.96);
   } else {
-    // Trophy truck: long hood, wide flares, cab, spare tyre, signal mast with beacon.
+    // Trophy truck: long hood, cab, spare tyre, signal mast with beacon.
     body.box(hx * 1.96, hy * 1.3, hz * 1.9, 0.08, mats.paint, 0, -hy * 0.1, 0);
     body.box(hx * 1.6, hy * 0.7, hz * 0.7, 0.09, mats.paint, 0, hy * 0.4, hz * 0.55);
     body.box(hx * 1.72, hy * 1.5, hz * 0.7, 0.1, mats.paint, 0, hy * 1.05, -hz * 0.15);
@@ -289,10 +271,6 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
       body.box(0.02, hy * 0.8, hz * 0.45, 0.01, mats.glass, s * (hx * 0.86 + 0.006), hy * 1.2, -hz * 0.15);
       body.box(0.012, 0.07, hz * 1.7, 0.005, mats.accent, s * (hx * 0.98 + 0.002), -hy * 0.35, 0);
       body.cyl(0.03, 0.03, hz * 0.8, mats.metal, s * (hx + 0.02), -hy * 0.7, -hz * 0.1, Math.PI / 2, 0, 0, 8);
-    }
-    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-      body.box(0.38, 0.17, spec.wheelRadius * 2.3, 0.06, mats.paint, sx * (spec.trackHalf - 0.07), wheelY + spec.wheelRadius + flareLift + 0.085, sz * spec.wheelBaseHalf);
-      archLips(body, spec, mats.paint, sx, sz, wheelY + spec.wheelRadius + flareLift, 2.3);
     }
     body.box(hx * 0.3, 0.012, hz * 1.1, 0.005, mats.accent, 0, hy * 0.78 + 0.004, hz * 0.4);
     body.box(hx * 1.5, hy * 0.5, hz * 0.55, 0.05, mats.dark, 0, hy * 0.35, -hz * 0.72);
