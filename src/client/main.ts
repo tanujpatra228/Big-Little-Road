@@ -13,6 +13,11 @@ import { createStage } from './render/stage';
 import { runShowcase } from './game/showcase';
 import { GameAudio } from './audio/game-audio';
 import { Hud } from './ui/hud';
+import { CoopPanel, type PanelPlayer } from './ui/coop-panel';
+import { RoomClient } from './net/room-client';
+import { RemoteCar } from './net/remote-car';
+import { nextPoseDelay } from '../shared/net/pose';
+import { ROOM_CODE, type PlayerInfo } from '../shared/net/protocol';
 import { TunePanel } from './ui/tune-panel';
 
 const SEED = 20260;
@@ -56,7 +61,9 @@ async function boot(): Promise<void> {
       vehicle.dispose();
       scene.remove(mesh.group);
     }
+    const changed = role !== r;
     role = r;
+    if (changed) net.sendCar(r);
     vehicle = new Vehicle(pw, specs[r], x, z, yaw);
     mesh = new CarMesh(specs[r]);
     scene.add(mesh.group);
@@ -92,7 +99,103 @@ async function boot(): Promise<void> {
     spawn(r, t.x, t.z, yaw);
   });
 
-  spawn('scout', SPAWN.x, SPAWN.z, 0);
+  // ---- Multiplayer: every browser drives its own car; the room just relays poses.
+  const remotes = new Map<string, RemoteCar>();
+  const roster = new Map<string, PlayerInfo>();
+  let forcePose = false; // re-announce ourselves when someone joins, so parked cars appear
+  let lastPoseAt = 0;
+  let stillForMs = 0;
+  let hornSent = false;
+
+  const refreshPanel = (): void => {
+    const players: PanelPlayer[] = [...roster.values()].map((p) => ({ ...p, self: p.id === net.selfId, rtt: p.id === net.selfId ? net.rttMs : 0 }));
+    panel.render({ status: net.status, code: net.code, max: 4, players });
+  };
+  const addRemote = (p: PlayerInfo): void => {
+    roster.set(p.id, p);
+    if (p.id === net.selfId) return;
+    const existing = remotes.get(p.id);
+    if (existing) existing.setRole(p.role);
+    else remotes.set(p.id, new RemoteCar(scene, p));
+  };
+  const net: RoomClient = new RoomClient(
+    {
+      welcome(id, code, list) {
+        roster.clear();
+        for (const r of remotes.values()) r.dispose();
+        remotes.clear();
+        for (const p of list) addRemote(p);
+        forcePose = true;
+        // Line up on the patio by slot instead of stacking on one spot.
+        const slot = Number(id.slice(1));
+        const t = vehicle.body.translation();
+        if (Math.hypot(t.x - SPAWN.x, t.z - SPAWN.z) < 6) spawn(role, SPAWN.x + (slot - 2.5) * 3, SPAWN.z, 0);
+        const url = new URL(location.href);
+        url.searchParams.set('room', code);
+        history.replaceState(null, '', url);
+        refreshPanel();
+      },
+      join(p) {
+        addRemote(p);
+        forcePose = true;
+        refreshPanel();
+      },
+      leave(id) {
+        remotes.get(id)?.dispose();
+        remotes.delete(id);
+        roster.delete(id);
+        refreshPanel();
+      },
+      pose(id, frame, at) {
+        remotes.get(id)?.push(frame, at);
+      },
+      car(id, r) {
+        const p = roster.get(id);
+        if (p) roster.set(id, { ...p, role: r });
+        remotes.get(id)?.setRole(r);
+        refreshPanel();
+      },
+      horn(id, on) {
+        const rc = remotes.get(id);
+        if (!on || !rc) return;
+        const to = rc.position.clone().sub(camera.position);
+        const d = to.length();
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+        audio.remoteHorn(rc.role, 1 / (1 + d / 18), d > 0.01 ? to.normalize().dot(right) : 0);
+      },
+      ping() {},
+      status() {
+        if (net.status === 'off') {
+          for (const r of remotes.values()) r.dispose();
+          remotes.clear();
+          roster.clear();
+        }
+        refreshPanel();
+      },
+    },
+    { name: () => panel.name, role: () => role },
+  );
+  const panel: CoopPanel = new CoopPanel({
+    async start() {
+      try {
+        net.connect(await net.create());
+      } catch {
+        panel.render({ status: 'failed', code: '', max: 4, players: [] });
+      }
+    },
+    leave() {
+      net.leave();
+      const url = new URL(location.href);
+      url.searchParams.delete('room');
+      history.replaceState(null, '', url);
+    },
+  });
+  window.setInterval(() => net.status === 'on' && panel.setRtt(net.rttMs), 2000); // ping readout only; no rebuild
+  const joinCode = params.get('room')?.toUpperCase() ?? '';
+  spawn('scout', SPAWN.x, SPAWN.z, 0); // after the net setup: spawn() tells the room about car changes
+  if (ROOM_CODE.test(joinCode)) net.connect(joinCode);
 
   addEventListener('resize', () => stage.resize());
 
@@ -101,6 +204,8 @@ async function boot(): Promise<void> {
     get vehicle() { return vehicle; },
     get role() { return role; },
     audio,
+    get net() { return net; },
+    remotes,
     spawn,
   };
 
@@ -143,6 +248,25 @@ async function boot(): Promise<void> {
       { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking },
       frame,
     );
+
+    // Network: poses at 10 Hz while moving, 2 Hz when nearly still, none once parked.
+    const horning = input.isDown('KeyH');
+    if (horning !== hornSent) {
+      hornSent = horning;
+      net.sendHorn(horning);
+    }
+    if (net.status === 'on') {
+      stillForMs = Math.abs(vehicle.speed) < 0.4 ? stillForMs + frame * 1000 : 0;
+      const delay = nextPoseDelay(vehicle.speed, stillForMs);
+      if (forcePose || (delay !== null && now - lastPoseAt >= delay)) {
+        const t = vehicle.body.translation();
+        const q = vehicle.body.rotation();
+        net.sendPose({ x: t.x, y: t.y, z: t.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w, v: vehicle.speed, steer: vehicle.wheelState(0).steer });
+        lastPoseAt = now;
+        forcePose = false;
+      }
+    }
+    for (const r of remotes.values()) r.update(performance.now(), frame);
 
     const pose = vehicle.pose(acc / FIXED_DT);
     mesh.update(vehicle, pose, frame);

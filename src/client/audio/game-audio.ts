@@ -423,6 +423,40 @@ export class GameAudio {
     }
   }
 
+  /** Another player's honk: a short two-tone beep, panned and softened by distance. */
+  remoteHorn(role: CarRole, gain: number, pan: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || gain < 0.01) return;
+    const now = ctx.currentTime;
+    const [fa, fb] = ENGINE_PROFILES[role].horn;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.14 * gain, now + 0.02);
+    out.gain.setValueAtTime(0.14 * gain, now + 0.3);
+    out.gain.linearRampToValueAtTime(0, now + 0.4);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2200;
+    let tail: AudioNode = out;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      out.connect(p);
+      tail = p;
+    }
+    tail.connect(this.master);
+    for (const f of [fa, fb]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f;
+      o.connect(lp);
+      o.start(now);
+      o.stop(now + 0.42);
+    }
+    lp.connect(out);
+    window.setTimeout(() => tail.disconnect(), 600);
+  }
+
   /** Hold-to-honk. Safe to call every frame. */
   horn(on: boolean): void {
     if (!this.ctx || on === this.hornOn) return;
