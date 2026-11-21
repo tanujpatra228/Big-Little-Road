@@ -95,12 +95,13 @@ Build in this order, each as pure logic in `shared/` first, then wired in:
 
 Feedback: driving feels good, graphics need to be good. The original plan had one line on art ("low-poly toy art") and no work item. That was a gap. Graphics are a track that runs beside the phases, with its own budget:
 
+- Decision made: zero art budget, everything generated in code. Full direction, techniques, milestones and budgets are in `docs/features/art-direction.md`.
 - Art direction first (1 to 2 days): pick one reference look for "toy-scale backyard" (warm light, shallow depth of field feel, big soft shadows, saturated toy plastics against realistic grass and dirt). Write it down with 5 reference images. Do not model anything before this exists.
 - Look-dev spike at the start of Phase 4: one finished corner of the yard (patio, deck edge, flowerbed) at final quality. If that looks right, scale it. If not, change the direction before building seven zones.
-- Pipeline: glTF/GLB assets, compressed (Draco or meshopt, KTX2 textures), loaded lazily per zone. Rapier physics stays on simple colliders.
+- Pipeline: procedural generators in code, one function per asset class, so a modeled GLB can replace any of them later without touching gameplay. No model or texture downloads in the first release.
 - Rendering upgrades in priority order: sky and lighting (HDR environment, tuned sun and fog), terrain splat textures instead of vertex colors, proper grass, car models with real detail (wheel wells, antennas, decals), contact shadows and dust or mud particles driven by surface type, post-processing (tone mapping, light bloom, subtle SSAO) behind a quality setting.
 - Budgets: first load under 10 s on a mid laptop on broadband, 60 fps on integrated graphics at the default setting, art payload under 12 MB total before lazy zones. Good graphics that miss these lose the no-install join flow, which is the growth engine.
-- Needs one decision from you: who makes the art (you, a contractor, or generated and cleaned up assets), because models are the real cost, not code.
+- Honest limit: procedural art has a detail ceiling, so the style is a stylized toy diorama and lighting carries the quality.
 
 ## 3. Testing
 

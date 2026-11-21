@@ -6,3 +6,4 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 ## Index
 
 - [RC Car Rescue Mission](rc-car-rescue-mission.md): randomized two-player rescue and revival missions (design captured, not scheduled).
+- [Art direction](art-direction.md): toy-diorama style, all art generated in code, milestones G1 to G5 and budgets.
