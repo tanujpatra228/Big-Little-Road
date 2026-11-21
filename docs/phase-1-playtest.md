@@ -30,6 +30,16 @@ Nothing in Phase 2 starts until this passes.
 - No tester gets permanently stuck. Flips are fine (flips become a rescue mechanic in Phase 3).
 - If a car fails, tune with `?tune`, copy the JSON shown in the panel into `src/shared/cars.ts`, retest with fresh people.
 
+## Surface speeds (after playtest 1)
+
+Top speed as a share of each car's grass speed, from the flat-world tests. No surface makes any car faster than grass.
+
+| Car | Sand | Mud | Rock | Water |
+|---|---|---|---|---|
+| Scout | 87% | 20% | 77% | 12% |
+| Hauler | 39% | 83% | 92% | 54% |
+| Relay | 45% | 36% | 53% | 21% |
+
 ## Known issues going in
 
 - Fence is a placeholder wall; cars bounce off it.

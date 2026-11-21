@@ -1,4 +1,4 @@
-import { Surface, type SurfaceAffinity } from './surfaces';
+import { Surface, type SurfaceAffinity, type SurfaceSpeed } from './surfaces';
 
 export type CarRole = 'scout' | 'hauler' | 'relay';
 
@@ -32,6 +32,8 @@ export interface CarSpec {
   steerFalloffSpeed: number;
   angularDamping: number;
   surfaces: SurfaceAffinity;
+  /** Top-speed fraction per surface. This is the main "how much does this terrain slow me" knob. */
+  surfaceSpeed: SurfaceSpeed;
 }
 
 export const CARS: Record<CarRole, CarSpec> = {
@@ -61,10 +63,18 @@ export const CARS: Record<CarRole, CarSpec> = {
     steerFalloffSpeed: 14,
     angularDamping: 1.2,
     surfaces: {
-      [Surface.Sand]: { grip: 1.25, drag: 0.35, traction: 1.2 }, // floats
-      [Surface.Mud]: { grip: 0.8, drag: 1.4, traction: 0.8 }, // sinks
+      [Surface.Sand]: { grip: 1.0, drag: 0.1 }, // light: skims the top
+      [Surface.Mud]: { grip: 0.8, drag: 1.4 }, // sinks
       [Surface.Water]: { drag: 1.3 },
       [Surface.Rock]: { grip: 0.85 },
+    },
+    surfaceSpeed: {
+      [Surface.Grass]: 1,
+      [Surface.Patio]: 1,
+      [Surface.Sand]: 0.8,
+      [Surface.Mud]: 1,
+      [Surface.Rock]: 0.72,
+      [Surface.Water]: 1,
     },
   },
   hauler: {
@@ -93,10 +103,18 @@ export const CARS: Record<CarRole, CarSpec> = {
     steerFalloffSpeed: 9,
     angularDamping: 2.0,
     surfaces: {
-      [Surface.Sand]: { grip: 0.9, drag: 1.3, traction: 0.95 },
+      [Surface.Sand]: { grip: 0.9, drag: 1.0 }, // heavy: digs in
       [Surface.Mud]: { grip: 1.35, drag: 0.55, traction: 1.35 },
       [Surface.Rock]: { grip: 1.3, traction: 1.25 },
       [Surface.Water]: { drag: 0.8, traction: 1.3 },
+    },
+    surfaceSpeed: {
+      [Surface.Grass]: 1,
+      [Surface.Patio]: 1,
+      [Surface.Sand]: 0.4,
+      [Surface.Mud]: 1,
+      [Surface.Rock]: 0.9,
+      [Surface.Water]: 1,
     },
   },
   relay: {
@@ -125,8 +143,16 @@ export const CARS: Record<CarRole, CarSpec> = {
     steerFalloffSpeed: 12,
     angularDamping: 1.6,
     surfaces: {
-      [Surface.Rock]: { grip: 0.8, traction: 0.85 },
+      [Surface.Rock]: { grip: 0.8 },
       [Surface.Sand]: { grip: 1.0 },
+    },
+    surfaceSpeed: {
+      [Surface.Grass]: 1,
+      [Surface.Patio]: 1,
+      [Surface.Sand]: 0.5,
+      [Surface.Mud]: 1,
+      [Surface.Rock]: 0.5,
+      [Surface.Water]: 1,
     },
   },
 };

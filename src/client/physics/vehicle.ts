@@ -104,6 +104,7 @@ export class Vehicle {
     let grip = 0;
     let drag = 0;
     let traction = 0;
+    let speedFrac = 0;
     for (let i = 0; i < WHEELS; i++) {
       const p = this.ctrl.wheelContactPoint(i);
       const s = p ? this.pw.terrain.surfaceAt(p.x, p.z) : this.surface;
@@ -111,11 +112,16 @@ export class Vehicle {
       grip += props.grip / WHEELS;
       drag += props.drag / WHEELS;
       traction += props.traction / WHEELS;
+      speedFrac += spec.surfaceSpeed[s] / WHEELS;
     }
 
     const target = steerAngle(input.steer, fwdSpeed, spec.maxSteer, spec.steerFalloffSpeed);
     this.steerCmd = approach(this.steerCmd, target, 3.2, dt);
-    const cmd = driveCommand(input, fwdSpeed, spec.enginePower, spec.topSpeed, spec.reverseTopSpeed, spec.brakeForce, WHEELS, traction);
+    const top = spec.topSpeed * speedFrac;
+    const reverseTop = spec.reverseTopSpeed * speedFrac;
+    // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
+    drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3);
+    const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction);
 
     for (let i = 0; i < WHEELS; i++) {
       const front = i < 2;

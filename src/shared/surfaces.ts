@@ -43,6 +43,13 @@ export function resolveSurface(surface: Surface, affinity: SurfaceAffinity): Sur
   return {
     grip: base.grip * (mod.grip ?? 1),
     drag: base.drag * (mod.drag ?? 1),
-    traction: base.traction * (mod.traction ?? 1),
+    // No surface may ever give more drive than a clean paved one.
+    traction: Math.min(1, base.traction * (mod.traction ?? 1)),
   };
 }
+
+/**
+ * Fraction of a car's top speed it can reach on each surface. Grass and patio are 1.
+ * Rule: no off-road surface may let a car go faster than it goes on grass.
+ */
+export type SurfaceSpeed = Record<Surface, number>;
