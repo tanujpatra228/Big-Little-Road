@@ -9,3 +9,4 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 - [Art direction](art-direction.md): toy-diorama style, all art generated in code, milestones G1 to G5 and budgets.
 - [Audio](audio.md): all sound synthesized live with Web Audio, engine voices per car, surface-driven tyre noise, impacts, horn, ambience.
 - [Multiplayer](multiplayer.md): rooms on Durable Objects, join by link, smoothed remote cars, message budget, tests.
+- [Car abilities](car-abilities.md): plan for drift, jump and nitro on all cars, with per-car tuning, guard rails, controls and order of work.

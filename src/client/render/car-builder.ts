@@ -72,7 +72,6 @@ export interface CarMaterials {
   metal: THREE.MeshStandardMaterial;
   rubber: THREE.MeshStandardMaterial;
   white: THREE.MeshStandardMaterial;
-  skin: THREE.MeshStandardMaterial;
   headlight: THREE.MeshStandardMaterial;
   taillight: THREE.MeshStandardMaterial;
   beacon: THREE.MeshStandardMaterial;
@@ -93,7 +92,6 @@ function makeMaterials(spec: CarSpec, color: number): CarMaterials {
     metal: new THREE.MeshStandardMaterial({ color: 0xc2c6cf, metalness: 0.85, roughness: 0.32 }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x1d1e22, roughness: 0.92 }),
     white: new THREE.MeshStandardMaterial({ color: 0xf3f1ea, roughness: 0.5 }),
-    skin: new THREE.MeshStandardMaterial({ color: 0xf0c29b, roughness: 0.7 }),
     headlight: glow(0xfff1c9),
     taillight: glow(0xff3b30),
     beacon: glow(0xff4d4d),
@@ -189,7 +187,7 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
   const rescue = variant === 'rescue';
 
   if (spec.role === 'scout' || rescue) {
-    // Desert buggy: low tub, open cage, driver, rear engine, light bar.
+    // Desert buggy: low tub, open cage, empty seat (cars are the characters), rear engine, light bar.
     body.box(hx * 1.96, hy * 1.2, hz * 1.84, rescue ? 0.12 : 0.07, mats.paint, 0, -hy * 0.1, 0);
     body.box(hx * 1.6, hy * 0.8, hz * 0.55, 0.07, mats.paint, 0, -hy * 0.02, hz * 0.86, -0.2);
     body.box(hx * 1.6, hy * 0.5, hz * 1.6, 0.05, mats.dark, 0, -hy * 0.85, 0);
@@ -201,10 +199,6 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
       body.cyl(0.035, 0.045, 0.42, mats.metal, -hx * 0.5, hy * 0.5, -hz * 1.0, Math.PI / 2 - 0.2, 0, 0, 8);
       body.box(0.3, 0.2, 0.3, 0.05, mats.dark, 0, hy * 0.75, -hz * 0.05);
       body.box(0.3, 0.3, 0.07, 0.04, mats.dark, 0, hy * 1.0 + 0.1, -hz * 0.2);
-      body.box(0.2, 0.2, 0.16, 0.05, mats.accent, 0, hy + 0.2, -hz * 0.1);
-      body.sphere(0.1, mats.skin, 0, hy + 0.4, -hz * 0.08);
-      body.sphere(0.135, mats.white, 0, hy + 0.43, -hz * 0.1, 1, 0.95, 1.05);
-      body.box(0.15, 0.07, 0.06, 0.02, mats.glass, 0, hy + 0.4, -hz * 0.1 + 0.12);
       const cage = (ax: number): void => {
         body.tube([ax, hy * 0.4, -hz * 0.08], [ax, hy + 0.66, -hz * 0.08], 0.024, mats.metal);
         body.tube([ax * 0.86, hy * 0.5, hz * 0.36], [ax * 0.7, hy + 0.4, hz * 0.2], 0.024, mats.metal);
