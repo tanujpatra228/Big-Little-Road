@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ATTACH_RANGE, DEADBAND, PLANK, REST_SPACING, ROPE_MAX_ACCEL, carriedPose, forward, hitchPoint, nearestFreeEnd,
-  plankEnds, ropeAccel, trailFarEnd, trailingPose, type PlankPose, type Vec2,
+  DEADBAND, PLANK, RAMP_SNAP_ANGLE, REST_SPACING, ROPE_MAX_ACCEL, carriedPose, forward, hitchPoint, hitchToward, nearestFreeEnd,
+  plankEnds, ropeAccel, snapRamp, trailFarEnd, trailingPose, type PlankPose, type Vec2,
 } from '../src/shared/tether';
 
 const near = (a: number, b: number, tol = 1e-6): void => expect(Math.abs(a - b)).toBeLessThan(tol);
@@ -38,16 +38,72 @@ describe('plank geometry', () => {
 describe('hooking', () => {
   const plank: PlankPose = { x: 10, z: 10, yaw: 0 };
   const [end0, end1] = plankEnds(plank);
+  const half = 0.9;
 
-  it('picks the nearer free end within reach', () => {
-    expect(nearestFreeEnd(plank, [null, null], { x: end0.x + 0.5, z: end0.z - 0.5 })).toBe(0);
-    expect(nearestFreeEnd(plank, [null, null], { x: end1.x, z: end1.z + 1 })).toBe(1);
+  it('picks the nearer free end, coming at it from any side', () => {
+    expect(nearestFreeEnd(plank, [null, null], { x: end0.x + 0.5, z: end0.z - 1 }, half)).toBe(0);
+    expect(nearestFreeEnd(plank, [null, null], { x: end1.x - 1, z: end1.z + 1 }, half)).toBe(1);
+    expect(nearestFreeEnd(plank, [null, null], { x: end0.x + 2, z: end0.z }, half)).toBe(0); // from the side of the plank
   });
 
   it('ignores an end someone already holds, and anything out of reach', () => {
-    expect(nearestFreeEnd(plank, ['p1', null], { x: end0.x, z: end0.z })).toBeNull();
-    expect(nearestFreeEnd(plank, [null, null], { x: 40, z: 40 })).toBeNull();
-    expect(nearestFreeEnd(plank, [null, null], { x: end0.x, z: end0.z - ATTACH_RANGE - 0.1 })).toBeNull();
+    expect(nearestFreeEnd(plank, ['p1', null], { x: end0.x, z: end0.z }, half)).toBeNull();
+    expect(nearestFreeEnd(plank, [null, null], { x: 40, z: 40 }, half)).toBeNull();
+    expect(nearestFreeEnd(plank, [null, null], { x: end0.x, z: end0.z - half - 2.5 }, half)).toBeNull();
+  });
+
+  it('a car in front hooks with its tail, a car behind hooks with its nose: a convoy holds the plank like a stretcher', () => {
+    // Lead car at z=10 facing +z, follower at z=-2 facing +z, plank between them.
+    const lead = hitchToward({ x: 0, z: 10 }, { x: 0, z: -2 }, half);
+    const follower = hitchToward({ x: 0, z: -2 }, { x: 0, z: 10 }, half);
+    expect(lead.z).toBeLessThan(10); // toward the follower: its tail
+    expect(follower.z).toBeGreaterThan(-2); // toward the lead: its nose
+    expect(Math.hypot(lead.x - follower.x, lead.z - follower.z)).toBeCloseTo(12 - 2 * (half + 0.3), 9);
+  });
+
+  it('side by side works too, and coincident cars do not blow up', () => {
+    const left = hitchToward({ x: -2.4, z: 0 }, { x: 2.4, z: 0 }, half);
+    expect(left.x).toBeGreaterThan(-2.4);
+    expect(hitchToward({ x: 1, z: 1 }, { x: 1, z: 1 }, half)).toEqual({ x: 1, z: 1 });
+  });
+});
+
+describe('leaning the plank on the platform wall', () => {
+  const R = 8;
+  const platform = { x: 0, z: 0, r: R };
+  const centreR = R - 0.4 + PLANK.length / 2;
+
+  it('snaps a plank set down near the wall, pointing roughly at it, into a radial ramp with its far end on top', () => {
+    const rough: PlankPose = { x: -9.5, z: 1.2, yaw: Math.atan2(1, -0.12) + 0.3 }; // west of the platform, a bit crooked
+    const snapped = snapRamp(rough, platform)!;
+    expect(snapped).not.toBeNull();
+    expect(Math.hypot(snapped.x, snapped.z)).toBeCloseTo(centreR, 9);
+    const [, far] = plankEnds(snapped);
+    expect(Math.hypot(far.x, far.z)).toBeCloseTo(R - 0.4, 9); // 0.4 m onto the top
+    // And it points at the centre.
+    const f = forward(snapped.yaw);
+    expect(f.x * snapped.x + f.z * snapped.z).toBeLessThan(0);
+  });
+
+  it('keeps the angle the player chose around the platform', () => {
+    for (const a of [0, 1, 2.5, -2]) {
+      const p: PlankPose = { x: Math.cos(a) * 10.5, z: Math.sin(a) * 10.5, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)) };
+      const s = snapRamp(p, platform)!;
+      expect(Math.atan2(s.z, s.x)).toBeCloseTo(a, 6);
+    }
+  });
+
+  it('does not snap a plank that is far away, across the wall, or pointing sideways', () => {
+    expect(snapRamp({ x: -30, z: 0, yaw: Math.PI / 2 }, platform)).toBeNull(); // too far
+    expect(snapRamp({ x: -3, z: 0, yaw: Math.PI / 2 }, platform)).toBeNull(); // already on the platform
+    expect(snapRamp({ x: -10, z: 0, yaw: 0 }, platform)).toBeNull(); // tangent to the wall, not pointing at it
+    const justOver = snapRamp({ x: -10, z: 0, yaw: Math.PI / 2 + RAMP_SNAP_ANGLE + 0.05 }, platform);
+    expect(justOver).toBeNull();
+  });
+
+  it('works whichever way the plank points along the line (either end first)', () => {
+    expect(snapRamp({ x: -10, z: 0, yaw: Math.PI / 2 }, platform)).not.toBeNull();
+    expect(snapRamp({ x: -10, z: 0, yaw: -Math.PI / 2 }, platform)).not.toBeNull();
   });
 });
 

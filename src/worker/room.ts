@@ -106,7 +106,7 @@ export class Room extends DurableObject<Env> {
     const now = Date.now();
     const result = msg.type === 'hello' ? logic.hello(att.conn, msg, now) : logic.message(att.conn, msg, now);
     this.dispatch(result);
-    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach') await this.persist();
+    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach' || msg.type === 'reset') await this.persist();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean): Promise<void> {

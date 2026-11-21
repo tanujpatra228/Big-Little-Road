@@ -82,6 +82,15 @@ export class PropsLogic {
     return h.prop;
   }
 
+  /** Send a prop back to where it started, if nobody is holding it. Used when it ends up out of reach. */
+  reset(propId: string): PropState | null {
+    const p = this.props.get(propId);
+    const def = PROPS.find((d) => d.id === propId);
+    if (!p || !def || p.holders[0] !== null || p.holders[1] !== null) return null;
+    p.pose = { ...def.start };
+    return p;
+  }
+
   /** A player left. Frees their end; the plank stays where it last rested. */
   release(playerId: string): PropState | null {
     const h = this.holding(playerId);

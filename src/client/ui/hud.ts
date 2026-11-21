@@ -11,6 +11,8 @@ export class Hud {
   private readonly fps = document.createElement('div');
   private readonly sound = document.createElement('div');
   private readonly prompt = document.createElement('div');
+  private readonly toastEl = document.createElement('div');
+  private toastTimer = 0;
   private audioState = '';
   private frames = 0;
   private acc = 0;
@@ -28,6 +30,10 @@ export class Hud {
       .hud .help{position:absolute;right:16px;bottom:16px;text-align:right;opacity:.75;font-size:12px}
       .hud .banner{position:absolute;top:30%;left:50%;transform:translateX(-50%);font-size:26px;font-weight:700;text-align:center;display:none}
       .hud .fps{position:absolute;right:16px;top:12px;font-size:12px;opacity:.7}
+      .hud .toast{position:absolute;top:92px;left:50%;transform:translateX(-50%) scale(.9);text-align:center;background:#10151ce6;border:2px solid #ffd23f;border-radius:16px;padding:12px 26px;opacity:0;transition:opacity .25s,transform .25s}
+      .hud .toast.show{opacity:1;transform:translateX(-50%) scale(1)}
+      .hud .toast b{display:block;font-size:24px;color:#ffd23f}
+      .hud .toast span{font-size:14px;opacity:.9}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
       .hud .sound{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:13px;opacity:.85;background:#0006;padding:5px 12px;border-radius:999px}
     `;
@@ -40,9 +46,10 @@ export class Hud {
     this.fps.className = 'fps';
     this.sound.className = 'sound';
     this.prompt.className = 'prompt';
+    this.toastEl.className = 'toast';
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space handbrake<br>1 2 3 switch car &middot; H horn &middot; F hook plank &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space handbrake<br>1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;
@@ -50,8 +57,21 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl);
     document.body.appendChild(this.root);
+  }
+
+  /** A celebratory message for a few seconds. */
+  toast(title: string, sub = '', ms = 4200): void {
+    this.toastEl.replaceChildren();
+    const b = document.createElement('b');
+    b.textContent = title;
+    const s = document.createElement('span');
+    s.textContent = sub;
+    this.toastEl.append(b, s);
+    this.toastEl.classList.add('show');
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
   /** A contextual action hint near the bottom of the screen, or hidden when null. */

@@ -2,10 +2,22 @@ import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { PropState } from '../../shared/net/props';
 import type { Terrain } from '../../shared/terrain';
-import { PLANK, carriedPose, plankEnds, trailFarEnd, trailingPose, type PlankPose, type Vec2 } from '../../shared/tether';
+import {
+  PLANK, carriedPose, hitchPoint, hitchToward, plankEnds, plankPlacement, trailFarEnd, trailingPose, type PlankPose, type Vec2,
+} from '../../shared/tether';
 import type { PhysicsWorld } from '../physics/world';
 
-/** Where a car's tow hitch is, and how high. */
+/** What the plank needs to know about a car that is holding it. */
+export interface CarInfo {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  /** Half the car's length, to find its nose and tail. */
+  halfLength: number;
+}
+
+/** Where a car's hitch is, and how high. */
 export interface HitchInfo {
   x: number;
   y: number;
@@ -26,6 +38,8 @@ export class PlankProp {
   private collider: RAPIER.Collider | null = null;
   private colliderKey = '';
   private readonly ropes: [THREE.Line, THREE.Line];
+  private readonly ghost: THREE.Mesh;
+  private readonly hitches = new Map<string, HitchInfo>();
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -36,16 +50,16 @@ export class PlankProp {
     this.state = state;
     this.displayPose = { ...state.pose };
 
-    const wood = [0xb98a52, 0xa87b46, 0xc29458].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
-    const slat = PLANK.width / 3;
+    const wood = [0xb98a52, 0xa87b46, 0xc29458, 0xb08049, 0xbd8f55].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
+    const slat = PLANK.width / wood.length;
     wood.forEach((mat, i) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(slat - 0.015, PLANK.thickness, PLANK.length), mat);
-      m.position.x = (i - 1) * slat;
+      m.position.x = (i - (wood.length - 1) / 2) * slat;
       m.castShadow = true;
       m.receiveShadow = true;
       this.group.add(m);
     });
-    // Two darker cross-battens so it reads as a plank bridge, not a plain slab.
+    // Darker cross-battens so it reads as a plank bridge, not a plain slab.
     const batten = new THREE.MeshStandardMaterial({ color: 0x7d5a32, roughness: 0.9 });
     for (const z of [-PLANK.length * 0.32, PLANK.length * 0.32]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(PLANK.width + 0.04, 0.04, 0.12), batten);
@@ -64,21 +78,43 @@ export class PlankProp {
       return line;
     };
     this.ropes = [mk(), mk()];
+
+    // A see-through green plank that shows where it will lean if you let go now.
+    this.ghost = new THREE.Mesh(
+      new THREE.BoxGeometry(PLANK.width, PLANK.thickness + 0.06, PLANK.length),
+      new THREE.MeshBasicMaterial({ color: 0x6dff8a, transparent: true, opacity: 0.38, depthWrite: false }),
+    );
+    this.ghost.visible = false;
+    this.ghost.renderOrder = 5;
+    scene.add(this.ghost);
   }
 
   setState(s: PropState): void {
     this.state = s;
   }
 
+  /** The hitch point of a holder, from the last update, or null. */
+  hitchOf(id: string): HitchInfo | null {
+    return this.hitches.get(id) ?? null;
+  }
+
+  /** Whether the lean-on-the-wall preview is showing. */
+  get ghostVisible(): boolean {
+    return this.ghost.visible;
+  }
+
+  /** Show (or hide, with null) the preview of where it would lean if released. */
+  setGhost(pose: PlankPose | null): void {
+    this.ghost.visible = pose !== null;
+    if (!pose) return;
+    const { pos, quat } = this.placement(pose, 0.02);
+    this.ghost.position.copy(pos);
+    this.ghost.quaternion.copy(quat);
+  }
+
   private placement(pose: PlankPose, lift: number): { pos: THREE.Vector3; quat: THREE.Quaternion } {
-    const [a, b] = plankEnds(pose);
-    const ya = this.terrain.heightAt(a.x, a.z);
-    const yb = this.terrain.heightAt(b.x, b.z);
-    const pitch = Math.atan2(yb - ya, PLANK.length);
-    return {
-      pos: new THREE.Vector3(pose.x, (ya + yb) / 2 + PLANK.thickness / 2 + lift, pose.z),
-      quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(-pitch, pose.yaw, 0, 'YXZ')),
-    };
+    const p = plankPlacement(pose, (x, z) => this.terrain.heightAt(x, z), lift);
+    return { pos: new THREE.Vector3(p.x, p.y, p.z), quat: new THREE.Quaternion(p.qx, p.qy, p.qz, p.qw) };
   }
 
   private setCollider(pose: PlankPose | null): void {
@@ -100,22 +136,33 @@ export class PlankProp {
     );
   }
 
-  /** Call every frame with a way to find any holder's hitch. */
-  update(hitchOf: (id: string) => HitchInfo | null): void {
+  /** Call every frame with a way to look up any holder's car. */
+  update(carOf: (id: string) => CarInfo | null): void {
     const [h0, h1] = this.state.holders;
-    const hp0 = h0 ? hitchOf(h0) : null;
-    const hp1 = h1 ? hitchOf(h1) : null;
+    const c0 = h0 ? carOf(h0) : null;
+    const c1 = h1 ? carOf(h1) : null;
     const prev = this.mode;
+    this.hitches.clear();
 
     if (h0 && h1) {
       this.mode = 'carried';
-      if (hp0 && hp1) this.displayPose = carriedPose(hp0, hp1, this.displayPose.yaw);
+      if (c0 && c1) {
+        // Each car holds the plank by the end that faces its partner.
+        const a = hitchToward(c0, c1, c0.halfLength);
+        const b = hitchToward(c1, c0, c1.halfLength);
+        this.hitches.set(h0, { x: a.x, y: c0.y - 0.1, z: a.z });
+        this.hitches.set(h1, { x: b.x, y: c1.y - 0.1, z: b.z });
+        this.displayPose = carriedPose(a, b, this.displayPose.yaw);
+      }
     } else if (h0 || h1) {
       this.mode = 'solo';
-      const hp = h0 ? hp0 : hp1;
-      if (hp) {
+      const holder = h0 ?? h1!;
+      const c = h0 ? c0 : c1;
+      if (c) {
+        // Alone, it hangs from the tail and drags behind.
+        const hp = hitchPoint(c, c.yaw, c.halfLength);
+        this.hitches.set(holder, { x: hp.x, y: c.y - 0.1, z: hp.z });
         if (!this.far || prev !== 'solo') {
-          // Start dragging from whichever end is farther from the car.
           const [e0, e1] = plankEnds(this.displayPose);
           this.far = Math.hypot(e0.x - hp.x, e0.z - hp.z) > Math.hypot(e1.x - hp.x, e1.z - hp.z) ? e0 : e1;
         }
@@ -136,23 +183,23 @@ export class PlankProp {
 
     // A rope from each holder's hitch to its end of the plank.
     const ends = plankEnds(this.displayPose);
-    const holders = [hp0, hp1] as const;
+    const holders = [h0, h1] as const;
     for (const i of [0, 1] as const) {
-      const hp = holders[i];
+      const id = holders[i];
+      const hp = id ? this.hitches.get(id) : undefined;
       const rope = this.ropes[i];
       rope.visible = !!hp;
       if (!hp) continue;
       const e = ends[i];
-      const y = this.terrain.heightAt(e.x, e.z) + 0.3;
       const attr = rope.geometry.getAttribute('position') as THREE.BufferAttribute;
       attr.setXYZ(0, hp.x, hp.y, hp.z);
-      attr.setXYZ(1, e.x, y, e.z);
+      attr.setXYZ(1, e.x, this.terrain.heightAt(e.x, e.z) + 0.3, e.z);
       attr.needsUpdate = true;
     }
   }
 
   dispose(): void {
     this.setCollider(null);
-    this.scene.remove(this.group, ...this.ropes);
+    this.scene.remove(this.group, this.ghost, ...this.ropes);
   }
 }

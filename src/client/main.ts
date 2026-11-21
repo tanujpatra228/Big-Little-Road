@@ -18,6 +18,9 @@ import { CoopPanel, type PanelPlayer } from './ui/coop-panel';
 import { RoomClient } from './net/room-client';
 import { RemoteCar } from './net/remote-car';
 import { TetherController } from './game/tether-controller';
+import { buildTerrace } from './render/terrace';
+import { Fireworks } from './render/fireworks';
+import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
 import { nextPoseDelay } from '../shared/net/pose';
 import { ROOM_CODE, type PlayerInfo } from '../shared/net/protocol';
 import { TunePanel } from './ui/tune-panel';
@@ -39,6 +42,10 @@ async function boot(): Promise<void> {
   scene.add(buildTerrainMesh(terrain), buildBoulderMesh(boulders));
   const grass = buildGrass(terrain);
   scene.add(grass.group);
+  const terrace = buildTerrace();
+  scene.add(terrace.group);
+  const fireworks = new Fireworks(scene);
+  let celebrateUntil = 0;
 
   const chase = new ChaseCam(camera, terrain);
   const input = new InputDevices();
@@ -190,6 +197,9 @@ async function boot(): Promise<void> {
       prop(info) {
         tether.onProp(info);
       },
+      goal(id, by) {
+        celebrate(id, by === net.selfId ? 'You made it up.' : `${roster.get(by)?.name ?? 'A teammate'} made it up.`);
+      },
       ping() {},
       status() {
         if (net.status === 'off') {
@@ -203,6 +213,16 @@ async function boot(): Promise<void> {
     },
     { name: () => panel.name, role: () => role },
   );
+  /** Fireworks, fanfare and a message, for everyone in the room. */
+  const celebrate = (id: string, who: string): void => {
+    const g = goalById(id);
+    if (!g) return;
+    celebrateUntil = performance.now() + 12000;
+    fireworks.launch(new THREE.Vector3(g.x, g.minY, g.z));
+    audio.fanfare();
+    hud.toast(`${g.name} reached!`, who);
+  };
+  const goalFiredAt = new Map<string, number>();
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
   const panel: CoopPanel = new CoopPanel({
     async start() {
@@ -234,6 +254,7 @@ async function boot(): Promise<void> {
     get xform() { return xform; },
     audio,
     get net() { return net; },
+    celebrate,
     remotes,
     get tether() { return tether; },
     spawn,
@@ -256,7 +277,18 @@ async function boot(): Promise<void> {
     // Other players' cars first, so their solid stand-ins and hitches are current for this frame.
     for (const r of remotes.values()) r.update(performance.now(), frame);
     if (input.wasPressed('KeyF')) tether.toggle();
+    if (input.wasPressed('KeyT')) tether.requestReset();
     const rope = tether.update();
+    // Reached a goal? Online the room announces it to everyone; alone we celebrate straight away.
+    const here = vehicle.body.translation();
+    for (const g of GOALS) {
+      if (!reached(g, here.x, here.y, here.z) || performance.now() - (goalFiredAt.get(g.id) ?? -1e9) < GOAL_COOLDOWN_MS) continue;
+      goalFiredAt.set(g.id, performance.now());
+      if (net.status === 'on') net.sendGoal(g.id);
+      else celebrate(g.id, 'You made it up.');
+    }
+    terrace.update(now / 1000, Math.max(0, Math.min(1, (celebrateUntil - performance.now()) / 2000)));
+    fireworks.update(frame);
     hud.setPrompt(tether.prompt);
 
     let steps = 0;

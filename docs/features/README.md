@@ -11,3 +11,4 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 - [Multiplayer](multiplayer.md): rooms on Durable Objects, join by link, smoothed remote cars, message budget, tests.
 - [Car abilities](car-abilities.md): plan for drift, jump and nitro on all cars, with per-car tuning, guard rails, controls and order of work.
 - [Switching cars](car-transform.md): momentum carried across a switch, the transformation animation and sound, how to preview it.
+- [The Terrace puzzle](terrace-puzzle.md): the first two-player puzzle, a walled platform reachable only by carrying the plank over as a ramp.

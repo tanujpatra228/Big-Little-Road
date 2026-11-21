@@ -2,7 +2,7 @@ import { createNoise } from './noise';
 import { Surface } from './surfaces';
 
 export const TERRAIN_SIZE = 160; // world units, centred on the origin
-export const TERRAIN_POINTS = 129; // heightfield vertices per side
+export const TERRAIN_POINTS = 257; // heightfield vertices per side (0.625 m cells: crisp enough for a platform wall)
 export const WATER_LEVEL = -1.2;
 export const SPAWN: Readonly<{ x: number; z: number }> = { x: 0, z: -2 };
 
@@ -15,6 +15,8 @@ export interface Terrain {
   surfaces: Uint8Array;
   heightAt(x: number, z: number): number;
   surfaceAt(x: number, z: number): Surface;
+  /** Raised platforms that get a truly vertical wall collider. A sloped edge would launch a fast car like a ramp. */
+  platforms?: ReadonlyArray<{ x: number; z: number; r: number; height: number }>;
 }
 
 const smooth = (edge0: number, edge1: number, x: number): number => {
@@ -33,6 +35,21 @@ const MUD: Zone = { x: -42, z: 30, r: 20 };
 export const ROCK: Readonly<Zone> = { x: -46, z: -44, r: 22 };
 const POND: Zone = { x: 42, z: -42, r: 15 };
 const WOODPILE: Zone = { x: 0, z: 56, r: 27 };
+
+/**
+ * The terrace: a raised flat platform on a flat apron of lawn. Its wall is taller than anything a car
+ * can hop (1.3 m, against tall boulders at 1.1 m), so the only way up is a ramp: the plank, carried
+ * there by two cars. The apron keeps the ground level so the ramp angle is predictable.
+ */
+export const PLATFORM: Readonly<{ x: number; z: number; r: number; height: number }> = { x: 28, z: -10, r: 8, height: 1.3 };
+const APRON_R = 17;
+
+/**
+ * The wall around the platform. Its face is just outside the sloped edge of the heightfield, so
+ * cars meet a vertical face, never the bevel. Its top is a hair under the plank's surface where the
+ * plank crosses it, so a car on the plank rolls over it.
+ */
+export const PLATFORM_WALL = { face: PLATFORM.r + 0.3, thickness: 0.3, top: 1.28, bottom: -0.6 } as const;
 
 const mask = (zone: Zone, x: number, z: number, feather: number): number => {
   const d = Math.hypot(x - zone.x, z - zone.z);
@@ -70,6 +87,13 @@ export function generateTerrain(seed: number): Terrain {
     const patio = mask(PATIO, x, z, 6);
     h = h * (1 - patio) + 0.3 * patio;
 
+    // The terrace: level apron, then a flat-topped platform with a near-vertical wall.
+    const dP = Math.hypot(x - PLATFORM.x, z - PLATFORM.z);
+    const apron = 1 - smooth(APRON_R - 7, APRON_R, dP);
+    h = h * (1 - apron) + 0.15 * apron;
+    const top = 1 - smooth(PLATFORM.r - 0.3, PLATFORM.r + 0.3, dP);
+    h = h * (1 - top) + (0.15 + PLATFORM.height) * top;
+
     // Fence: the edge rises steeply so nobody leaves the yard.
     const edge = Math.max(Math.abs(x), Math.abs(z));
     h += smooth(half - 5.5, half - 2.5, edge) * 12;
@@ -78,6 +102,7 @@ export function generateTerrain(seed: number): Terrain {
 
   const classify = (x: number, z: number, h: number): Surface => {
     if (mask(PATIO, x, z, 6) > 0.5) return Surface.Patio;
+    if (Math.hypot(x - PLATFORM.x, z - PLATFORM.z) < PLATFORM.r + 0.2) return Surface.Patio; // paved terrace
     if (mask(POND, x, z, 8) > 0.35 && h < WATER_LEVEL + 0.4) return Surface.Water;
     if (mask(MUD, x, z, 9) > 0.45) return Surface.Mud;
     const rock = mask(ROCK, x, z, 8);
@@ -123,5 +148,5 @@ export function generateTerrain(seed: number): Terrain {
     return (surfaces[row * n + col] ?? Surface.Grass) as Surface;
   };
 
-  return { seed, size: TERRAIN_SIZE, points: n, heights, surfaces, heightAt, surfaceAt };
+  return { seed, size: TERRAIN_SIZE, points: n, heights, surfaces, heightAt, surfaceAt, platforms: [PLATFORM] };
 }

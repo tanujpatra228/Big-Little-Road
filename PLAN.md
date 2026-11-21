@@ -53,7 +53,7 @@ Status: code complete, gate pending human playtest. Protocol in `docs/phase-1-pl
 - Gate: 5 outside testers drive each car for 3 minutes and describe it as fun, not floaty or stuck. If not, spend more time here. Everything else depends on it.
 
 ### Phase 2: Netcode spike (weeks 2 to 3)
-Status: first slice done (rooms, join by link, smoothed remote cars, car and horn sync). Second slice done: solid remote cars, the plank with rope carrying that is stable under delay, a `?lag=` switch. Remaining: run the week-4 gate with two real players at 150 ms. See `docs/features/multiplayer.md`.
+Status: first slice done (rooms, join by link, smoothed remote cars, car and horn sync). Second slice done: solid remote cars, the plank with rope carrying that is stable under delay, a `?lag=` switch. The first real puzzle exists on top of it: the Terrace (`docs/features/terrace-puzzle.md`), a walled platform reachable only by carrying the plank over as a ramp, with a goal, fireworks and a return-plank key. Remaining: run the week-4 gate with two real players at 150 ms. See `docs/features/multiplayer.md`.
 - Worker + Durable Object room: join by 4-letter code and link, guest identity, slot reclaim after reload.
 - `protocol.ts` with validation and per-connection rate limits.
 - Relay `PoseTransport`: 10 Hz moving, 2 Hz nearly still, 0 parked. Remote cars drawn at now minus 100 ms, extrapolate up to 250 ms.

@@ -75,6 +75,20 @@ late.close(); await sleep(300);
 a.send({ type: 'attach', prop: 'nope', end: 0 }); await sleep(200);
 check('unknown prop is ignored', true);
 
+// ---- goals and returning the plank
+b.send({ type: 'goal', id: 'terrace' }); await sleep(300);
+check('a reached goal is announced to everyone with who got there', b.of('goal').some((g) => g.id === 'terrace' && g.by === 'p2') && late.of('goal').length >= 0 && a.of('goal').some((g) => g.by === 'p2'));
+b.send({ type: 'goal', id: 'terrace' }); await sleep(300);
+check('the same goal is not celebrated twice in quick succession', b.of('goal').length === 1);
+b.send({ type: 'goal', id: 'nowhere' }); await sleep(200);
+check('an unknown goal is ignored', b.of('goal').length === 1);
+b.send({ type: 'reset', prop: 'plank1' }); await sleep(250);
+check('returning the plank while it is held does nothing', b.of('prop').at(-1)?.prop.h1 === 'p2');
+b.send({ type: 'detach', x: 700, z: 700, yaw: 100 }); await sleep(250);
+b.send({ type: 'reset', prop: 'plank1' }); await sleep(300);
+const home = b.of('prop').at(-1)?.prop;
+check('once nobody holds it, the plank returns to its start', home && home.h0 === '' && home.h1 === '' && home.x === 1700 && home.z === -600, JSON.stringify(home));
+
 const bad = new Client(code, 'Eve'); await bad.opened; bad.send('{"type":"pose","x":"nope"}'); await sleep(400);
 check('bad frame closes the connection (1008)', bad.closed?.code === 1008, JSON.stringify(bad.closed));
 

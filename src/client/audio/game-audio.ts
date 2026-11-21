@@ -562,6 +562,44 @@ export class GameAudio {
     }
   }
 
+  /** A short happy fanfare: a rising arpeggio with a shimmer. Plays when a goal is reached. */
+  fanfare(): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]; // C5 E5 G5 C6 E6
+    notes.forEach((hz, i) => {
+      const t = now + i * 0.11;
+      const last = i === notes.length - 1;
+      for (const [type, mult, level] of [['triangle', 1, 0.16], ['square', 2, 0.04]] as const) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = hz * mult;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(level, t + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0005, t + (last ? 0.9 : 0.32));
+        o.connect(g).connect(this.fxBus);
+        o.start(t);
+        o.stop(t + (last ? 0.95 : 0.36));
+      }
+    });
+    // Shimmer on the last note.
+    const air = ctx.createBufferSource();
+    air.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 6000;
+    const g = ctx.createGain();
+    const t = now + 4 * 0.11;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.8);
+    air.connect(hp).connect(g).connect(this.fxBus);
+    air.start(t, Math.random());
+    air.stop(t + 0.85);
+  }
+
   /** A short metallic click for hooking or letting go of a rope. */
   hook(): void {
     const ctx = this.ctx;

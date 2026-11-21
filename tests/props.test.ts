@@ -134,3 +134,62 @@ describe('prop frames are validated', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'detach', x: 0, z: 0, yaw: 9000 }))).toBeNull();
   });
 });
+
+describe('returning the plank', () => {
+  it('sends it back to its start when nobody holds it, and refuses while held', () => {
+    const l = new PropsLogic();
+    l.attach('p1', 'plank1', 0);
+    l.detach('p1', { x: -50, z: 20, yaw: 1 });
+    expect(l.props.get('plank1')!.pose).toEqual({ x: -50, z: 20, yaw: 1 });
+    expect(l.reset('plank1')).not.toBeNull();
+    expect(l.props.get('plank1')!.pose).toEqual(PROPS[0]!.start);
+    l.attach('p2', 'plank1', 1);
+    expect(l.reset('plank1')).toBeNull(); // held: not allowed
+    expect(l.reset('nope')).toBeNull();
+  });
+
+  it('is broadcast by the room, and a held plank stays put', () => {
+    const r = new RoomLogic('ABCD');
+    r.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    r.message('c1', { type: 'attach', prop: 'plank1', end: 0 }, 1);
+    expect(r.message('c1', { type: 'reset', prop: 'plank1' }, 2).out).toEqual([]);
+    r.message('c1', { type: 'detach', x: 900, z: 900, yaw: 0 }, 3);
+    const back = r.message('c1', { type: 'reset', prop: 'plank1' }, 4);
+    expect(back.out[0]!.msg).toMatchObject({ type: 'prop', prop: { id: 'plank1', h0: '', h1: '' } });
+  });
+});
+
+describe('goals', () => {
+  const room = (): RoomLogic => {
+    const r = new RoomLogic('ABCD');
+    r.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    r.hello('c2', hello('Bo', 'key-bbbbbbbb'), 0);
+    return r;
+  };
+
+  it('a reached goal is announced to everyone with who got there', () => {
+    const r = room();
+    const out = r.message('c2', { type: 'goal', id: 'terrace' }, 1000);
+    expect(out.out).toHaveLength(1);
+    expect(out.out[0]!.to).toBe('all');
+    expect(out.out[0]!.msg).toEqual({ type: 'goal', id: 'terrace', by: 'p2' });
+  });
+
+  it('is not celebrated twice for one run, but can fire again later', () => {
+    const r = room();
+    r.message('c1', { type: 'goal', id: 'terrace' }, 1000);
+    expect(r.message('c2', { type: 'goal', id: 'terrace' }, 3000).out).toEqual([]);
+    expect(r.message('c2', { type: 'goal', id: 'terrace' }, 14000).out).toHaveLength(1);
+  });
+
+  it('ignores goals that do not exist', () => {
+    expect(room().message('c1', { type: 'goal', id: 'nowhere' }, 1).out).toEqual([]);
+  });
+
+  it('frames are validated', () => {
+    expect(parseClientMessage(JSON.stringify({ type: 'goal', id: 'terrace' }))).not.toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'goal', id: 'BAD ID' }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'reset', prop: 'plank1' }))).not.toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'reset', prop: 5 }))).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
 import type { CarRole } from '../cars';
 import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type ServerMsg } from './protocol';
 import { PropsLogic, toInfo, type PropState } from './props';
+import { GOAL_COOLDOWN_MS, goalById } from '../goals';
 
 /**
  * All room rules in one pure state machine: no sockets, no timers, no clock of its own.
@@ -45,6 +46,8 @@ const none = (): Result => ({ out: [], close: [] });
 export class RoomLogic {
   readonly players = new Map<string, Player>();
   props = new PropsLogic();
+  /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
+  private readonly goalAt = new Map<string, number>();
 
   constructor(readonly code: string) {}
 
@@ -144,6 +147,17 @@ export class RoomLogic {
       case 'attach': {
         const changed = this.props.attach(p.id, msg.prop, msg.end);
         return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
+      }
+      case 'reset': {
+        const changed = this.props.reset(msg.prop);
+        return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
+      }
+      case 'goal': {
+        if (!goalById(msg.id)) return none();
+        const last = this.goalAt.get(msg.id);
+        if (last !== undefined && now - last < GOAL_COOLDOWN_MS) return none();
+        this.goalAt.set(msg.id, now);
+        return { out: [{ to: 'all', msg: { type: 'goal', id: msg.id, by: p.id } }], close: [] };
       }
       case 'detach': {
         const changed = this.props.detach(p.id, { x: msg.x / 100, z: msg.z / 100, yaw: msg.yaw / 1000 });

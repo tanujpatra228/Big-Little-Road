@@ -48,7 +48,11 @@ export type ClientMsg =
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
   /** Let go. x, z (cm) and yaw (mrad) say where the player saw the prop, used if nobody else holds it. */
-  | { type: 'detach'; x: number; z: number; yaw: number };
+  | { type: 'detach'; x: number; z: number; yaw: number }
+  /** Return a prop to where it started (only works if nobody holds it). */
+  | { type: 'reset'; prop: string }
+  /** This player's car reached a goal. */
+  | { type: 'goal'; id: string };
 
 export type ServerMsg =
   | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[] }
@@ -59,6 +63,7 @@ export type ServerMsg =
   | { type: 'horn'; id: string; on: boolean }
   | { type: 'ping'; id: string; kind: PingKind; x: number; z: number }
   | { type: 'prop'; prop: PropInfo }
+  | { type: 'goal'; id: string; by: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -129,6 +134,12 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
     case 'detach':
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.yaw, -7000, 7000)) return null;
       return { type: 'detach', x: m.x, z: m.z, yaw: m.yaw };
+    case 'reset':
+      if (typeof m.prop !== 'string' || !/^[a-z0-9]{1,12}$/.test(m.prop)) return null;
+      return { type: 'reset', prop: m.prop };
+    case 'goal':
+      if (typeof m.id !== 'string' || !/^[a-z0-9]{1,12}$/.test(m.id)) return null;
+      return { type: 'goal', id: m.id };
     default:
       return null;
   }

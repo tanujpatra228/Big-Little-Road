@@ -1,3 +1,5 @@
+import { PLATFORM } from './terrain';
+
 /**
  * The plank and the rope that two cars use to carry it. Pure geometry and physics-free rules.
  *
@@ -19,7 +21,8 @@ export interface PlankPose {
   yaw: number;
 }
 
-export const PLANK = { length: 4, width: 0.55, thickness: 0.12, rope: 0.4 } as const;
+/** A board wide enough for a car to drive along: the Hauler is about 1.6 wide. */
+export const PLANK = { length: 4, width: 1.9, thickness: 0.12, rope: 0.4 } as const;
 
 /** Ideal distance between the two hitch points: plank plus a short rope at each end. */
 export const REST_SPACING = PLANK.length + 2 * PLANK.rope;
@@ -40,11 +43,24 @@ export function forward(yaw: number): Vec2 {
   return { x: Math.sin(yaw), z: Math.cos(yaw) };
 }
 
-/** Where a car's tow hitch is: behind its tail. */
+/** Where a lone car's tow hitch is: behind its tail. */
 export function hitchPoint(car: Vec2, yaw: number, halfLength: number): Vec2 {
   const f = forward(yaw);
   const back = halfLength + 0.3;
   return { x: car.x - f.x * back, z: car.z - f.z * back };
+}
+
+/**
+ * Where a car's hitch is while two cars carry the plank: the end of the car that faces its partner,
+ * so two cars in convoy hold it between them like a stretcher, and side by side works too.
+ */
+export function hitchToward(car: Vec2, partner: Vec2, halfLength: number): Vec2 {
+  const dx = partner.x - car.x;
+  const dz = partner.z - car.z;
+  const d = hypot(dx, dz);
+  if (d < 1e-6) return { x: car.x, z: car.z };
+  const reach = halfLength + 0.3;
+  return { x: car.x + (dx / d) * reach, z: car.z + (dz / d) * reach };
 }
 
 /** The two ends of a resting plank. End 0 is behind its centre, end 1 ahead. */
@@ -67,14 +83,17 @@ export function carriedPose(h0: Vec2, h1: Vec2, fallbackYaw = 0): PlankPose {
   return { x: (h0.x + h1.x) / 2, z: (h0.z + h1.z) / 2, yaw: hypot(dx, dz) < 1e-6 ? fallbackYaw : Math.atan2(dx, dz) };
 }
 
-/** Which free end of a resting plank is within reach of this hitch, if any. */
-export function nearestFreeEnd(plank: PlankPose, holders: readonly [string | null, string | null], hitch: Vec2): 0 | 1 | null {
+/**
+ * Which free end of a resting plank a car can hook: the nearest one within reach of any part of
+ * the car (its centre plus its half length plus a metre or so), so you can come at it from any side.
+ */
+export function nearestFreeEnd(plank: PlankPose, holders: readonly [string | null, string | null], car: Vec2, halfLength: number): 0 | 1 | null {
   const ends = plankEnds(plank);
   let best: 0 | 1 | null = null;
-  let bestD = ATTACH_RANGE;
+  let bestD = halfLength + ATTACH_RANGE - 0.9;
   for (const i of [0, 1] as const) {
     if (holders[i] !== null) continue;
-    const d = hypot(ends[i].x - hitch.x, ends[i].z - hitch.z);
+    const d = hypot(ends[i].x - car.x, ends[i].z - car.z);
     if (d <= bestD) {
       bestD = d;
       best = i;
@@ -128,4 +147,56 @@ export function trailingPose(hitch: Vec2, farEnd: Vec2, fallbackYaw = 0): PlankP
   const f = forward(yaw);
   const mid = PLANK.rope + PLANK.length / 2;
   return { x: hitch.x + f.x * mid, z: hitch.z + f.z * mid, yaw };
+}
+
+/**
+ * Where a plank lies on the ground: centre, and a rotation that follows the slope between its two
+ * ends (so it can lean from lawn up to a platform). Used by the renderer and by the collider, and
+ * tested, so what you see is what you drive on.
+ */
+export function plankPlacement(
+  pose: PlankPose,
+  heightAt: (x: number, z: number) => number,
+  lift = 0,
+): { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number; pitch: number } {
+  const [a, b] = plankEnds(pose);
+  const ya = heightAt(a.x, a.z);
+  const yb = heightAt(b.x, b.z);
+  const pitch = Math.atan2(yb - ya, PLANK.length);
+  // Yaw about up, then pitch about the plank's own side axis (raising the forward end).
+  const sy = Math.sin(pose.yaw / 2);
+  const cy = Math.cos(pose.yaw / 2);
+  const sx = Math.sin(-pitch / 2);
+  const cx = Math.cos(-pitch / 2);
+  return {
+    x: pose.x,
+    y: (ya + yb) / 2 + PLANK.thickness / 2 + lift,
+    z: pose.z,
+    qx: cy * sx,
+    qy: sy * cx,
+    qz: -sy * sx,
+    qw: cy * cx,
+    pitch,
+  };
+}
+
+/** Where a plank should lean when it is set down near the platform wall: the ramp. */
+export const RAMP_SNAP_ANGLE = 0.7; // radians: how far off straight at the wall still snaps
+export const RAMP_SNAP_REACH = PLANK.length + 3.5; // how far from the wall (plank centre) it still snaps
+
+/**
+ * If a plank is set down near the platform wall and roughly pointing at it, returns the pose that
+ * leans it up onto the platform: radial, with its far end 0.4 m onto the top. Otherwise null.
+ * The cars cannot do this themselves: the lead car stops at the wall, and the plank hangs behind it.
+ */
+export function snapRamp(pose: PlankPose, platform: { x: number; z: number; r: number } = PLATFORM): PlankPose | null {
+  const dx = pose.x - platform.x;
+  const dz = pose.z - platform.z;
+  const d = hypot(dx, dz);
+  if (d < platform.r + 0.5 || d > platform.r + RAMP_SNAP_REACH) return null;
+  const toCentre = { x: -dx / d, z: -dz / d };
+  const f = forward(pose.yaw);
+  if (Math.abs(f.x * toCentre.x + f.z * toCentre.z) < Math.cos(RAMP_SNAP_ANGLE)) return null;
+  const centreR = platform.r - 0.4 + PLANK.length / 2;
+  return { x: platform.x - toCentre.x * centreR, z: platform.z - toCentre.z * centreR, yaw: Math.atan2(toCentre.x, toCentre.z) };
 }

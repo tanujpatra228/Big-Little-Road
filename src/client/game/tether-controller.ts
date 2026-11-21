@@ -2,13 +2,13 @@ import type * as THREE from 'three';
 import { CARS, type CarRole } from '../../shared/cars';
 import { PROPS, PropsLogic, fromInfo, type PropInfo } from '../../shared/net/props';
 import type { Terrain } from '../../shared/terrain';
-import { hitchPoint, nearestFreeEnd, ropeAccel } from '../../shared/tether';
+import { nearestFreeEnd, ropeAccel, snapRamp } from '../../shared/tether';
 import type { GameAudio } from '../audio/game-audio';
 import type { RemoteCar } from '../net/remote-car';
 import type { RoomClient } from '../net/room-client';
 import type { PhysicsWorld } from '../physics/world';
 import type { Vehicle } from '../physics/vehicle';
-import { PlankProp, type HitchInfo } from './plank';
+import { PlankProp, type CarInfo } from './plank';
 
 const PLANK_ID = PROPS[0]!.id;
 
@@ -64,22 +64,20 @@ export class TetherController {
     this.plank.setState(this.local.props.get(PLANK_ID)!);
   }
 
-  private hitchOf(id: string): HitchInfo | null {
+  private carOf(id: string): CarInfo | null {
     if (id === this.selfId()) {
       const v = this.d.vehicle();
       const t = v.body.translation();
       const q = v.body.rotation();
       const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-      const h = hitchPoint({ x: t.x, z: t.z }, yaw, CARS[this.d.role()].half.z);
-      return { x: h.x, y: t.y - 0.1, z: h.z };
+      return { x: t.x, y: t.y, z: t.z, yaw, halfLength: CARS[this.d.role()].half.z };
     }
     const r = this.d.remotes().get(id);
     if (!r || !r.visible) return null;
-    const h = hitchPoint({ x: r.position.x, z: r.position.z }, r.yaw, CARS[r.role].half.z);
-    return { x: h.x, y: r.position.y - 0.1, z: h.z };
+    return { x: r.position.x, y: r.position.y, z: r.position.z, yaw: r.yaw, halfLength: CARS[r.role].half.z };
   }
 
-  /** The F key: hook the nearest free end, or let go. */
+  /** The F key: hook the nearest free end, or let go (leaning the plank on the wall if it is near). */
   toggle(): void {
     const me = this.selfId();
     const st = this.plank.state;
@@ -87,7 +85,8 @@ export class TetherController {
     const net = this.d.net();
 
     if (mine >= 0) {
-      const p = this.plank.displayPose;
+      const shown = this.plank.displayPose;
+      const p = snapRamp(shown) ?? shown;
       if (this.online()) net.sendDetach(p.x, p.z, p.yaw);
       else {
         this.local.detach(me, p);
@@ -96,9 +95,9 @@ export class TetherController {
       }
       return;
     }
-    const hitch = this.hitchOf(me);
-    if (!hitch) return;
-    const end = nearestFreeEnd(this.plank.displayPose, st.holders, hitch);
+    const car = this.carOf(me);
+    if (!car) return;
+    const end = nearestFreeEnd(this.plank.displayPose, st.holders, car, car.halfLength);
     if (end === null) return;
     if (this.online()) net.sendAttach(PLANK_ID, end);
     else {
@@ -108,27 +107,42 @@ export class TetherController {
     }
   }
 
+  /** The T key: send the plank back to where it started, if nobody is holding it. */
+  requestReset(): void {
+    if (this.online()) this.d.net().sendReset(PLANK_ID);
+    else if (this.local.reset(PLANK_ID)) this.plank.setState(this.local.props.get(PLANK_ID)!);
+  }
+
   /** Call once per frame before the physics steps. Returns the pull on our car, in m/s^2. */
   update(): { x: number; z: number } {
-    this.plank.update((id) => this.hitchOf(id));
+    this.plank.update((id) => this.carOf(id));
     const me = this.selfId();
     const [h0, h1] = this.plank.state.holders;
     const holding = h0 === me || h1 === me;
 
     let pull = { x: 0, z: 0 };
     if (h0 && h1 && holding) {
-      const a = this.hitchOf(me);
-      const b = this.hitchOf(h0 === me ? h1 : h0);
+      const a = this.plank.hitchOf(me);
+      const b = this.plank.hitchOf(h0 === me ? h1 : h0);
       if (a && b) {
         const v = this.d.vehicle().body.linvel();
         pull = ropeAccel({ x: a.x, z: a.z }, { x: b.x, z: b.z }, { x: v.x, z: v.z });
       }
     }
 
-    if (holding) this.prompt = h0 && h1 ? 'F: let go. Keep the rope slack and drive together.' : 'F: let go. A second car can hook the other end.';
-    else {
-      const hitch = this.hitchOf(me);
-      this.prompt = hitch && nearestFreeEnd(this.plank.displayPose, this.plank.state.holders, hitch) !== null ? 'F: hook the plank' : null;
+    // Near the platform wall, show where the plank would lean if let go now.
+    const snap = holding ? snapRamp(this.plank.displayPose) : null;
+    this.plank.setGhost(snap);
+
+    if (holding) {
+      this.prompt = snap
+        ? 'F: let go to lean the plank on the wall as a ramp'
+        : h0 && h1
+          ? 'F: let go. Drive in convoy and keep the rope slack.'
+          : 'F: let go. A second car can hook the other end.';
+    } else {
+      const car = this.carOf(me);
+      this.prompt = car && nearestFreeEnd(this.plank.displayPose, this.plank.state.holders, car, car.halfLength) !== null ? 'F: hook the plank' : null;
     }
     return pull;
   }

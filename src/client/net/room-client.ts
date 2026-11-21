@@ -15,6 +15,7 @@ export interface RoomHandlers {
   horn(id: string, on: boolean): void;
   ping(id: string, kind: PingKind, x: number, z: number): void;
   prop(p: PropInfo): void;
+  goal(id: string, by: string): void;
   status(s: NetStatus): void;
 }
 
@@ -184,6 +185,9 @@ export class RoomClient {
       case 'prop':
         this.h.prop(msg.prop);
         break;
+      case 'goal':
+        this.h.goal(msg.id, msg.by);
+        break;
       case 'full':
         this.wantOpen = false;
         this.setStatus('full');
@@ -218,6 +222,14 @@ export class RoomClient {
 
   sendAttach(prop: string, end: 0 | 1): void {
     this.send(encode({ type: 'attach', prop, end }));
+  }
+
+  sendGoal(id: string): void {
+    this.send(encode({ type: 'goal', id }));
+  }
+
+  sendReset(prop: string): void {
+    this.send(encode({ type: 'reset', prop }));
   }
 
   /** Let go of whatever we hold, reporting where we saw it (used if nobody else holds it). */
