@@ -15,6 +15,15 @@ All sound is synthesized live with Web Audio. No audio files, nothing to downloa
 | Horn | Two square tones, per-car pitch | Hold H |
 | Ambience | Breeze bed, crickets, random bird chirps panned around the yard | Always on, very quiet |
 
+## Volume controls
+
+A speaker button (top left) opens sliders for Master, Engines, Effects (tyres, wind, impacts, horns, clicks) and Ambience (birds, crickets, breeze), plus a Mute button. M also mutes. Settings are remembered in the browser.
+
+- Every sound is routed through one of three buses (engine, effects, ambience) into the master, so the groups are truly independent.
+- Sliders follow a squared curve (`volumeToGain` in `shared/audio-model.ts`), which feels natural. Defaults reproduce the loudness the game had before sliders existed (master 87%, the rest 100%).
+- Saved values are read leniently, so corrupt storage falls back to defaults.
+- Verified in a real browser: engines off cut the measured level by about 93%, all three groups off gave silence, master 30% gave about 11% of the level, mute gave exactly zero, and values survived a reload.
+
 ## Controls
 
 - Sound starts on the first key, click or touch (browsers require a gesture). A hint shows until then.
@@ -36,7 +45,6 @@ A headless browser run confirmed: audio stays locked before a gesture and runs a
 
 ## Not done yet
 
-- Volume slider and separate engine, effects and ambience volumes.
 - Music. Recommendation: none until the game loop exists, then a gentle generative or looped acoustic bed for the backyard.
 - Other players' cars. When multiplayer exists each remote car needs a positional (panned, distance-attenuated) engine voice. The engine voice is built per car so this is a small step.
 - Suspension creak, boulder scrape, grass rustle against the chassis, water entry splash.

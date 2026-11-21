@@ -12,6 +12,7 @@ import { InputDevices } from './game/input';
 import { createStage } from './render/stage';
 import { runShowcase } from './game/showcase';
 import { GameAudio } from './audio/game-audio';
+import { AudioPanel } from './ui/audio-panel';
 import { Hud } from './ui/hud';
 import { CoopPanel, type PanelPlayer } from './ui/coop-panel';
 import { RoomClient } from './net/room-client';
@@ -44,6 +45,7 @@ async function boot(): Promise<void> {
 
   // Browsers only start audio after a gesture, so unlock on the first key, click or touch.
   const audio = new GameAudio();
+  const audioPanel = new AudioPanel(audio);
   const unlock = (): void => audio.unlock();
   for (const ev of ['keydown', 'pointerdown', 'touchstart'] as const) addEventListener(ev, unlock, { passive: true });
 
@@ -255,7 +257,10 @@ async function boot(): Promise<void> {
     if (vehicle.isOutOfBounds()) spawn(role, SPAWN.x, SPAWN.z, 0);
 
     const drive = input.read(0);
-    if (input.wasPressed('KeyM')) audio.toggleMute();
+    if (input.wasPressed('KeyM')) {
+      audio.toggleMute();
+      audioPanel.sync();
+    }
     audio.horn(input.isDown('KeyH'));
     const hit = vehicle.consumeImpact();
     if (hit) audio.impact(hit, vehicle.surface);

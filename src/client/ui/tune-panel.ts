@@ -16,7 +16,7 @@ export class TunePanel {
 
   constructor(private onChange: (spec: CarSpec) => void, private getGravity: () => number, private setGravity: (g: number) => void) {
     Object.assign(this.root.style, {
-      position: 'fixed', left: '12px', top: '12px', width: '230px', maxHeight: '90vh', overflow: 'auto',
+      position: 'fixed', left: '12px', top: '64px', width: '230px', maxHeight: '80vh', overflow: 'auto',
       background: '#000b', color: '#fff', font: '12px system-ui', padding: '8px', borderRadius: '8px',
     });
     this.root.addEventListener('keydown', (e) => e.stopPropagation());

@@ -1,8 +1,8 @@
 import { CARS, type CarRole } from '../../shared/cars';
 import { Surface } from '../../shared/surfaces';
 import {
-  ENGINE_PROFILES, IDLE_RPM, engineHz, impactVoice, squealGain, stepRpm, targetRpm, tyreSound, windGain,
-  type EngineProfile, type Impact,
+  ENGINE_PROFILES, IDLE_RPM, engineHz, impactVoice, parseVolumes, squealGain, stepRpm, targetRpm, tyreSound, volumeToGain, windGain,
+  type EngineProfile, type Impact, type Volumes,
 } from '../../shared/audio-model';
 
 export interface AudioState {
@@ -16,6 +16,7 @@ export interface AudioState {
 }
 
 const STORAGE_KEY = 'blr-sound';
+const VOLUME_KEY = 'blr-volumes';
 
 /**
  * Everything you hear, synthesized live with Web Audio: no audio files, nothing to download.
@@ -26,7 +27,10 @@ export class GameAudio {
   private master!: GainNode;
   private analyser!: AnalyserNode;
   private muted = false;
-  private readonly volume = 0.75;
+  private volumes: Volumes = parseVolumes(null);
+  private engineBus!: GainNode;
+  private fxBus!: GainNode;
+  private ambienceBus!: GainNode;
 
   private noise!: AudioBuffer;
   private crackle!: AudioBuffer;
@@ -65,6 +69,7 @@ export class GameAudio {
   constructor() {
     try {
       this.muted = localStorage.getItem(STORAGE_KEY) === 'off';
+      this.volumes = parseVolumes(localStorage.getItem(VOLUME_KEY));
     } catch {
       /* private mode: start with sound on */
     }
@@ -91,8 +96,32 @@ export class GameAudio {
     } catch {
       /* ignore */
     }
-    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+    this.applyVolumes();
     return this.muted;
+  }
+
+  getVolumes(): Volumes {
+    return { ...this.volumes };
+  }
+
+  /** Move one slider. Takes effect smoothly and is remembered. */
+  setVolume(which: keyof Volumes, v: number): void {
+    this.volumes = { ...this.volumes, [which]: Math.min(1, Math.max(0, v)) };
+    try {
+      localStorage.setItem(VOLUME_KEY, JSON.stringify(this.volumes));
+    } catch {
+      /* ignore */
+    }
+    this.applyVolumes();
+  }
+
+  private applyVolumes(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : volumeToGain(this.volumes.master), t, 0.04);
+    this.engineBus.gain.setTargetAtTime(volumeToGain(this.volumes.engine), t, 0.04);
+    this.fxBus.gain.setTargetAtTime(volumeToGain(this.volumes.effects), t, 0.04);
+    this.ambienceBus.gain.setTargetAtTime(volumeToGain(this.volumes.ambience), t, 0.04);
   }
 
   /** Overall output level, 0..1 RMS. Used by tests and debugging. */
@@ -118,13 +147,21 @@ export class GameAudio {
     this.ctx = ctx;
 
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : this.volume;
+    this.engineBus = ctx.createGain();
+    this.fxBus = ctx.createGain();
+    this.ambienceBus = ctx.createGain();
+    for (const bus of [this.engineBus, this.fxBus, this.ambienceBus]) bus.connect(this.master);
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 6;
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     this.master.connect(comp).connect(this.analyser).connect(ctx.destination);
+    this.applyVolumes();
+    this.master.gain.value = this.muted ? 0 : volumeToGain(this.volumes.master); // no fade-in click on first start
+    this.engineBus.gain.value = volumeToGain(this.volumes.engine);
+    this.fxBus.gain.value = volumeToGain(this.volumes.effects);
+    this.ambienceBus.gain.value = volumeToGain(this.volumes.ambience);
 
     this.noise = this.makeNoise(ctx);
     this.crackle = this.makeCrackle(ctx);
@@ -191,7 +228,7 @@ export class GameAudio {
     this.oscA.connect(gainA).connect(this.shaper);
     this.oscB.connect(this.gainB).connect(this.shaper);
     this.oscC.connect(this.gainC).connect(this.shaper);
-    this.shaper.connect(this.engineLp).connect(this.engineGain).connect(this.master);
+    this.shaper.connect(this.engineLp).connect(this.engineGain).connect(this.engineBus);
 
     // Slow pitch wobble: the lumpy idle.
     const lfo = ctx.createOscillator();
@@ -221,7 +258,7 @@ export class GameAudio {
     this.tyreBp.type = 'bandpass';
     this.tyreGain = ctx.createGain();
     this.tyreGain.gain.value = 0;
-    src.connect(this.tyreBp).connect(this.tyreGain).connect(this.master);
+    src.connect(this.tyreBp).connect(this.tyreGain).connect(this.fxBus);
 
     this.crackleSrc = this.loopNoise(ctx, this.crackle);
     const hp = ctx.createBiquadFilter();
@@ -229,7 +266,7 @@ export class GameAudio {
     hp.frequency.value = 1100;
     this.crackleGain = ctx.createGain();
     this.crackleGain.gain.value = 0;
-    this.crackleSrc.connect(hp).connect(this.crackleGain).connect(this.master);
+    this.crackleSrc.connect(hp).connect(this.crackleGain).connect(this.fxBus);
 
     const windSrc = this.loopNoise(ctx, this.noise);
     const windLp = ctx.createBiquadFilter();
@@ -237,7 +274,7 @@ export class GameAudio {
     windLp.frequency.value = 800;
     this.windGainNode = ctx.createGain();
     this.windGainNode.gain.value = 0;
-    windSrc.connect(windLp).connect(this.windGainNode).connect(this.master);
+    windSrc.connect(windLp).connect(this.windGainNode).connect(this.fxBus);
 
     const sqSrc = this.loopNoise(ctx, this.noise);
     const sqBp = ctx.createBiquadFilter();
@@ -246,7 +283,7 @@ export class GameAudio {
     sqBp.Q.value = 24;
     this.squealGainNode = ctx.createGain();
     this.squealGainNode.gain.value = 0;
-    sqSrc.connect(sqBp).connect(this.squealGainNode).connect(this.master);
+    sqSrc.connect(sqBp).connect(this.squealGainNode).connect(this.fxBus);
   }
 
   private buildHorn(ctx: AudioContext): void {
@@ -260,7 +297,7 @@ export class GameAudio {
     this.hornGain.gain.value = 0;
     this.hornA.connect(lp);
     this.hornB.connect(lp);
-    lp.connect(this.hornGain).connect(this.master);
+    lp.connect(this.hornGain).connect(this.fxBus);
     this.hornA.start();
     this.hornB.start();
     this.setHornPitch();
@@ -287,7 +324,7 @@ export class GameAudio {
     depth.gain.value = 0.02;
     slow.connect(depth).connect(g.gain);
     slow.start();
-    src.connect(lp).connect(g).connect(this.master);
+    src.connect(lp).connect(g).connect(this.ambienceBus);
 
     const cricket = ctx.createOscillator();
     cricket.frequency.value = 4300;
@@ -299,7 +336,7 @@ export class GameAudio {
     const amDepth = ctx.createGain();
     amDepth.gain.value = 0.0015;
     am.connect(amDepth).connect(cg.gain);
-    cricket.connect(cg).connect(this.master);
+    cricket.connect(cg).connect(this.ambienceBus);
     cricket.start();
     am.start();
   }
@@ -369,7 +406,7 @@ export class GameAudio {
       out = pan;
     }
     osc.connect(g);
-    out.connect(this.master);
+    out.connect(this.ambienceBus);
     osc.start(t0);
     osc.stop(t + 0.05);
     osc.onended = () => out.disconnect();
@@ -393,7 +430,7 @@ export class GameAudio {
     const tg = ctx.createGain();
     tg.gain.setValueAtTime(v.gain, now);
     tg.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-    thump.connect(tg).connect(this.master);
+    thump.connect(tg).connect(this.fxBus);
     thump.start(now);
     thump.stop(now + 0.3);
 
@@ -406,7 +443,7 @@ export class GameAudio {
     const bg = ctx.createGain();
     bg.gain.setValueAtTime(v.gain * 0.9, now);
     bg.gain.exponentialRampToValueAtTime(0.001, now + v.decay);
-    burst.connect(bp).connect(bg).connect(this.master);
+    burst.connect(bp).connect(bg).connect(this.fxBus);
     burst.start(now, Math.random());
     burst.stop(now + v.decay + 0.05);
 
@@ -417,7 +454,7 @@ export class GameAudio {
       const cg = ctx.createGain();
       cg.gain.setValueAtTime(v.clank * 0.35, now);
       cg.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      clank.connect(cg).connect(this.master);
+      clank.connect(cg).connect(this.fxBus);
       clank.start(now);
       clank.stop(now + 0.14);
     }
@@ -444,7 +481,7 @@ export class GameAudio {
       out.connect(p);
       tail = p;
     }
-    tail.connect(this.master);
+    tail.connect(this.fxBus);
     for (const f of [fa, fb]) {
       const o = ctx.createOscillator();
       o.type = 'square';
@@ -469,7 +506,7 @@ export class GameAudio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.1, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-    o.connect(g).connect(this.master);
+    o.connect(g).connect(this.fxBus);
     o.start(now);
     o.stop(now + 0.1);
   }

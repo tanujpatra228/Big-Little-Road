@@ -170,3 +170,39 @@ export function impactVoice(impact: Impact, surface: Surface): ImpactVoice {
     clank: hard * (1 - impact.vertical * 0.5) * impact.intensity,
   };
 }
+
+/** Slider positions, 0 to 1. Master plus three groups of sounds. */
+export interface Volumes {
+  master: number;
+  /** Car engines. */
+  engine: number;
+  /** Tyres, wind, impacts, horns, clicks. */
+  effects: number;
+  /** Birds, crickets, breeze. */
+  ambience: number;
+}
+
+/** Defaults reproduce the loudness before there were sliders: master gain 0.75, everything else 1. */
+export const DEFAULT_VOLUMES: Volumes = { master: 0.87, engine: 1, effects: 1, ambience: 1 };
+
+/** Sliders feel natural when the gain follows a curve: squaring puts the middle of the slider near -12 dB. */
+export function volumeToGain(v: number): number {
+  const c = clamp(Number.isFinite(v) ? v : 0, 0, 1);
+  return c * c;
+}
+
+/** Reads saved volumes leniently: bad JSON, missing or out-of-range values fall back to defaults. */
+export function parseVolumes(raw: string | null | undefined): Volumes {
+  const out = { ...DEFAULT_VOLUMES };
+  if (!raw) return out;
+  try {
+    const o = JSON.parse(raw) as Partial<Record<keyof Volumes, unknown>>;
+    for (const k of Object.keys(out) as Array<keyof Volumes>) {
+      const v = o[k];
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = clamp(v, 0, 1);
+    }
+  } catch {
+    /* corrupt storage: defaults */
+  }
+  return out;
+}

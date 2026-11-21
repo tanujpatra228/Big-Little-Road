@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CAR_ORDER } from '../src/shared/cars';
 import { Surface } from '../src/shared/surfaces';
 import {
-  ENGINE_PROFILES, IDLE_RPM, engineHz, impactFromDelta, impactVoice, squealGain, stepRpm, targetRpm, tyreSound, windGain,
+  DEFAULT_VOLUMES, ENGINE_PROFILES, IDLE_RPM, parseVolumes, volumeToGain, engineHz, impactFromDelta, impactVoice, squealGain, stepRpm, targetRpm, tyreSound, windGain,
 } from '../src/shared/audio-model';
 
 describe('engine rpm', () => {
@@ -113,5 +113,34 @@ describe('impacts', () => {
     const hit = { intensity: 0.7, vertical: 0.1 };
     expect(impactVoice(hit, Surface.Rock).noiseHz).toBeGreaterThan(impactVoice(hit, Surface.Sand).noiseHz * 2);
     expect(impactVoice(hit, Surface.Rock).clank).toBeGreaterThan(impactVoice(hit, Surface.Mud).clank * 3);
+  });
+});
+
+describe('volume sliders', () => {
+  it('map to gain on a curve: silent at 0, full at 1, never louder than the slider', () => {
+    expect(volumeToGain(0)).toBe(0);
+    expect(volumeToGain(1)).toBe(1);
+    expect(volumeToGain(0.5)).toBeLessThan(0.5);
+    for (let v = 0; v < 1; v += 0.1) expect(volumeToGain(v + 0.1)).toBeGreaterThan(volumeToGain(v));
+  });
+
+  it('survive nonsense input', () => {
+    expect(volumeToGain(-3)).toBe(0);
+    expect(volumeToGain(9)).toBe(1);
+    expect(volumeToGain(Number.NaN)).toBe(0);
+  });
+
+  it('defaults keep the loudness the game had before there were sliders', () => {
+    expect(Math.abs(volumeToGain(DEFAULT_VOLUMES.master) - 0.75)).toBeLessThan(0.01);
+    expect(volumeToGain(DEFAULT_VOLUMES.engine)).toBe(1);
+    expect(volumeToGain(DEFAULT_VOLUMES.effects)).toBe(1);
+    expect(volumeToGain(DEFAULT_VOLUMES.ambience)).toBe(1);
+  });
+
+  it('are read back leniently from storage', () => {
+    expect(parseVolumes(null)).toEqual(DEFAULT_VOLUMES);
+    expect(parseVolumes('not json')).toEqual(DEFAULT_VOLUMES);
+    expect(parseVolumes('{"master":0.3,"engine":0.5,"effects":2,"ambience":-1}')).toEqual({ master: 0.3, engine: 0.5, effects: 1, ambience: 0 });
+    expect(parseVolumes('{"master":"loud"}')).toEqual(DEFAULT_VOLUMES);
   });
 });
