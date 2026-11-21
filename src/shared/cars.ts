@@ -39,6 +39,10 @@ export interface CarSpec {
   jumpApex: number;
   /** Seconds after landing before the next hop. */
   jumpCooldown: number;
+  /** Engine force multiplier at full boost. */
+  nitroForce: number;
+  /** Top-speed multiplier at full boost. Never above MAX_NITRO_TOP (tested). */
+  nitroTop: number;
 }
 
 export const CARS: Record<CarRole, CarSpec> = {
@@ -85,6 +89,8 @@ export const CARS: Record<CarRole, CarSpec> = {
     },
     jumpApex: 0.55,
     jumpCooldown: 0.8,
+    nitroForce: 1.6,
+    nitroTop: 1.35,
   },
   hauler: {
     role: 'hauler',
@@ -128,6 +134,8 @@ export const CARS: Record<CarRole, CarSpec> = {
     },
     jumpApex: 0.35,
     jumpCooldown: 1.2,
+    nitroForce: 1.9,
+    nitroTop: 1.12,
   },
   relay: {
     role: 'relay',
@@ -169,6 +177,8 @@ export const CARS: Record<CarRole, CarSpec> = {
     },
     jumpApex: 0.5,
     jumpCooldown: 1.2,
+    nitroForce: 1.65,
+    nitroTop: 1.25,
   },
 };
 

@@ -13,6 +13,8 @@ export interface AudioState {
   surface: Surface;
   groundedWheels: number;
   braking: boolean;
+  /** Nitro strength 0..1: raises the engine pitch and opens up the rushing sound. */
+  boost?: number;
 }
 
 const STORAGE_KEY = 'blr-sound';
@@ -353,14 +355,15 @@ export class GameAudio {
 
     // Engine: rpm through the gearbox, then pitch, tone and level.
     this.rpm = stepRpm(this.rpm, targetRpm(s.speed, CARS[s.role].topSpeed, s.throttle), dt);
-    const hz = engineHz(p, this.rpm);
+    const boost = s.boost ?? 0;
+    const hz = engineHz(p, this.rpm) * (1 + 0.14 * boost);
     const load = Math.max(0, s.throttle);
     this.oscA.frequency.setTargetAtTime(hz, t, tc);
     this.oscB.frequency.setTargetAtTime(hz * 2.007, t, tc);
     this.oscC.frequency.setTargetAtTime(hz * 0.5, t, tc);
     this.wobble.gain.setTargetAtTime(hz * p.wobble * (1.4 - this.rpm), t, 0.1);
     this.engineLp.frequency.setTargetAtTime(p.cutLow + (p.cutHigh - p.cutLow) * (0.3 * this.rpm + 0.7 * load * this.rpm + 0.1), t, 0.08);
-    this.engineGain.gain.setTargetAtTime(p.gain * (0.55 + 0.45 * load) * (0.7 + 0.3 * this.rpm), t, 0.06);
+    this.engineGain.gain.setTargetAtTime(p.gain * (0.55 + 0.45 * load) * (0.7 + 0.3 * this.rpm) * (1 + 0.25 * boost), t, 0.06);
 
     const tyre = tyreSound(s.surface, s.speed, s.groundedWheels);
     this.tyreBp.frequency.setTargetAtTime(tyre.hz, t, 0.08);
@@ -598,6 +601,35 @@ export class GameAudio {
     air.connect(hp).connect(g).connect(this.fxBus);
     air.start(t, Math.random());
     air.stop(t + 0.85);
+  }
+
+  /** The nitro kicking in: a rising rush of air. Others' boosts are quieter and panned. */
+  whoosh(gain = 1, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || gain < 0.01) return;
+    const now = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(350, now);
+    bp.frequency.exponentialRampToValueAtTime(2400, now + 0.45);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.32 * gain, now + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    src.connect(bp).connect(g);
+    let tail: AudioNode = g;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      g.connect(p);
+      tail = p;
+    }
+    tail.connect(this.fxBus);
+    src.start(now, Math.random());
+    src.stop(now + 0.65);
   }
 
   /** A springy hop: a quick upward chirp with a soft thump under it. */

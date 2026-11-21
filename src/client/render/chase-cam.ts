@@ -17,7 +17,8 @@ export class ChaseCam {
     this.ready = false;
   }
 
-  update(pose: Pose, speed: number, dt: number): void {
+  /** Nitro kick: the view widens and the camera drops back a little. `boost` is 0..1. */
+  update(pose: Pose, speed: number, dt: number, boost = 0): void {
     // Chassis forward projected on the ground plane.
     const fx = 2 * (pose.qx * pose.qz + pose.qw * pose.qy);
     const fz = 1 - 2 * (pose.qx * pose.qx + pose.qy * pose.qy);
@@ -31,7 +32,7 @@ export class ChaseCam {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += d * (1 - Math.exp(-3.2 * dt));
 
-    const back = this.distance + Math.min(2.5, Math.abs(speed) * 0.12);
+    const back = this.distance + Math.min(2.5, Math.abs(speed) * 0.12) + boost * 0.9;
     const target = new THREE.Vector3(
       pose.x - Math.sin(this.yaw) * back,
       pose.y + this.height,
@@ -46,7 +47,7 @@ export class ChaseCam {
 
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.look);
-    const fov = 62 + Math.min(14, Math.abs(speed) * 0.55);
+    const fov = 62 + Math.min(14, Math.abs(speed) * 0.55) + boost * 9;
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-4 * dt));
       this.camera.updateProjectionMatrix();

@@ -12,6 +12,8 @@ export class Hud {
   private readonly sound = document.createElement('div');
   private readonly prompt = document.createElement('div');
   private readonly toastEl = document.createElement('div');
+  private readonly nitroBar = document.createElement('div');
+  private readonly nitroFill = document.createElement('i');
   private toastTimer = 0;
   private audioState = '';
   private frames = 0;
@@ -34,6 +36,10 @@ export class Hud {
       .hud .toast.show{opacity:1;transform:translateX(-50%) scale(1)}
       .hud .toast b{display:block;font-size:24px;color:#ffd23f}
       .hud .toast span{font-size:14px;opacity:.9}
+      .hud .nitro{position:absolute;left:20px;bottom:128px;width:150px;height:10px;border-radius:999px;background:#0008;border:1px solid #fff4;overflow:hidden}
+      .hud .nitro i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff7a1a,#ffd23f);transform-origin:left;transition:background .2s}
+      .hud .nitro.low i{background:#e0412f}
+      .hud .nitro.run i{background:linear-gradient(90deg,#ffd23f,#fff3b0)}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
       .hud .sound{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:13px;opacity:.85;background:#0006;padding:5px 12px;border-radius:999px}
     `;
@@ -47,9 +53,12 @@ export class Hud {
     this.sound.className = 'sound';
     this.prompt.className = 'prompt';
     this.toastEl.className = 'toast';
+    this.nitroBar.className = 'nitro';
+    this.nitroBar.title = 'Nitro (Shift)';
+    this.nitroBar.append(this.nitroFill);
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; C handbrake<br>1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;
@@ -57,7 +66,7 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar);
     document.body.appendChild(this.root);
   }
 
@@ -92,6 +101,9 @@ export class Hud {
     // Toy-scale numbers: show units/s * 3.6 so top speeds read like km/h.
     this.speed.innerHTML = `${Math.abs(v.speed * 3.6).toFixed(0)}<small>km/h</small>`;
     this.info.textContent = `${SURFACE_NAMES[v.surface]}${v.grounded === 0 ? ' (airborne)' : ''}`;
+    this.nitroFill.style.transform = `scaleX(${v.nitro.level.toFixed(3)})`;
+    this.nitroBar.classList.toggle('run', v.nitro.active);
+    this.nitroBar.classList.toggle('low', v.nitro.level < 0.2);
     for (const b of this.cars.querySelectorAll('button')) b.classList.toggle('on', b.dataset.role === role);
     if (v.isFlipped) {
       const left = Math.ceil(v.resetSecondsLeft);

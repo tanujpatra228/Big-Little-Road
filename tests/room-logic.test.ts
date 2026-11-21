@@ -88,6 +88,13 @@ describe('relaying', () => {
     expect(r.out[0]!.to).toBe('all');
   });
 
+  it('nitro start and stop reach the others only, tagged with the sender', () => {
+    const room = setup();
+    const r = room.message('c1', { type: 'nitro', on: true }, 100);
+    expect(r.out[0]!.to).toEqual({ except: 'c1' });
+    expect(r.out[0]!.msg).toEqual({ type: 'nitro', id: 'p1', on: true });
+  });
+
   it('horn and ping reach the others only', () => {
     const room = setup();
     expect(room.message('c1', { type: 'horn', on: true }, 100).out[0]!.to).toEqual({ except: 'c1' });

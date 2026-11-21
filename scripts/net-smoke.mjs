@@ -46,6 +46,8 @@ check('A does not get its own pose back', a.of('pose').length === 0);
 b.send({ type: 'horn', on: true }); await sleep(250);
 check('horn reaches the other player', a.of('horn').some((h) => h.id === 'p2' && h.on === true));
 
+b.send({ type: 'nitro', on: true }); await sleep(250);
+check('nitro flag reaches the other player', a.of('nitro').some((n) => n.id === 'p2' && n.on === true));
 b.send({ type: 'car', role: 'relay' }); await sleep(250);
 check('car change reaches everyone including sender', a.of('car').some((c) => c.role === 'relay') && b.of('car').some((c) => c.role === 'relay'));
 

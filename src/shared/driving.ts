@@ -4,6 +4,8 @@ export interface DriveInput {
   /** -1 (left) to 1 (right). */
   steer: number;
   handbrake: boolean;
+  /** Nitro key held. Does nothing without throttle. */
+  nitro?: boolean;
 }
 
 export const NO_INPUT: Readonly<DriveInput> = { throttle: 0, steer: 0, handbrake: false };

@@ -1,6 +1,6 @@
 # Car abilities: drift, jump, nitro
 
-Status: decisions made (defaults accepted). Jump is built and live. Nitro and drift are next, in that order. Applies to all cars (Scout, Hauler, Relay, and the rescue car once revived). No characters: the cars are the characters (the Scout's driver figure was removed).
+Status: decisions made (defaults accepted). Jump and nitro are built and live. Drift is next. Applies to all cars (Scout, Hauler, Relay, and the rescue car once revived). No characters: the cars are the characters (the Scout's driver figure was removed).
 
 ## What exists today
 
@@ -98,6 +98,18 @@ Decided: Space jumps, C is the handbrake and later the drift key, Shift is nitro
 - **Lesson that changed the numbers:** the first tuning (0.9 / 0.5 / 0.95 m) let the Scout hop over a 1.2 m wall. What matters is not the apex but apex plus the belly clearance (about 0.35 m). The rule is now measured directly: `tests/jump.test.ts` drives every car at a 1.1 m block at approach speeds 4, 7 and 12 m/s with seven hop timings, and none gets over. `tests/platform.test.ts` does the same against the Terrace wall from four sides. What a hop does add: Relay goes from 0.5 m driveable to about 1.0 m, Scout from 0.7 to 0.9, and rubble (under 0.3 m) is trivial.
 - Network: nothing new. A hop is local physics; other players see it in the pose stream (10 Hz, so a 0.6 s hop is sampled about six times and smoothed). Sound is a local spring chirp.
 - Not done: a dust puff on takeoff and landing (waits for art milestone G4 particles), a cooldown hint in the HUD.
+
+## Nitro: as built
+
+- Hold Shift (gamepad RB or LB) while on the throttle. Pure rules in `shared/nitro.ts` (`NitroTank`, `boostFactor`), applied in `Vehicle.step`. A personal tank: 4 s of boost when full, drains only while boosting with throttle down, refills at 1/16 per second after a 1 s pause, and once empty stays off until a fifth is back. The tank survives a car switch.
+- The boost fades in over a quarter of a second. The extra engine force applies only while it runs (so tapping is not a free trick); the raised speed limit fades out over about 0.7 s afterwards, so it never snaps back.
+- Per car (`nitroForce`, `nitroTop` in `CarSpec`), measured on flat grass: Scout 20.7 to 28.5 m/s (the big speed gain), Relay 18.0 to 23.1, Hauler 11.4 to 13.0 on grass but 9.5 to 11.8 in mud (the torque boost, built for climbing and soft ground).
+- **The surface rule, stated precisely:** boosted speed never exceeds the surface's own speed limit times the car's boost (itself capped at 1.4 globally), and no surface ever beats grass-with-nitro. My first test wording ("never above 1.4 times the unboosted speed") was wrong: in mud a car is limited by drag, not by its top-speed cap, so extra engine force lifts it by more than 1.4 times of a very small number (Scout 4.1 to 6.3 m/s).
+- Tests (`tests/nitro.test.ts`): tank drain, lockout, refill, fade; per car on five surfaces; acceleration from standstill; no spend without throttle; an empty tank returns the car to normal speed; a hard boosted turn at speed in both directions does not flip.
+- Feedback: twin exhaust flames with halos, FOV widens by up to 9 degrees and the camera drops back, engine pitch and level rise, a rush-of-air sound when it starts, and a meter above the speed readout (yellow while running, red under 20%).
+- Network: one tiny `nitro` message on start and on stop (`{type:'nitro', on}`), relayed like the horn, so other players see the flame and hear a quieter, panned whoosh. Cost: two messages per boost, each 1/20 of a Durable Object request. Poses are unchanged.
+- Known risk, as predicted: a boosted Scout crosses the 160 m yard in about 6 s. Revisit after a playtest (bigger map or lower boosted top speed).
+- Not done: shared-battery nitro for missions (Phase 3), the drift charge (arrives with drift), a boosted-landing or boost-while-towing check.
 
 ## Open questions for the owner (answered above)
 

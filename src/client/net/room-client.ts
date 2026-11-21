@@ -13,6 +13,7 @@ export interface RoomHandlers {
   pose(id: string, frame: PoseFrame, at: number): void;
   car(id: string, role: CarRole): void;
   horn(id: string, on: boolean): void;
+  nitro(id: string, on: boolean): void;
   ping(id: string, kind: PingKind, x: number, z: number): void;
   prop(p: PropInfo): void;
   goal(id: string, by: string): void;
@@ -179,6 +180,9 @@ export class RoomClient {
       case 'horn':
         this.h.horn(msg.id, msg.on);
         break;
+      case 'nitro':
+        this.h.nitro(msg.id, msg.on);
+        break;
       case 'ping':
         this.h.ping(msg.id, msg.kind, msg.x, msg.z);
         break;
@@ -210,6 +214,10 @@ export class RoomClient {
 
   sendCar(role: CarRole): void {
     this.send(encode({ type: 'car', role }));
+  }
+
+  sendNitro(on: boolean): void {
+    this.send(encode({ type: 'nitro', on }));
   }
 
   sendHorn(on: boolean): void {

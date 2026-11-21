@@ -3,6 +3,7 @@ import { approach, clamp, driveCommand, steerAngle, type DriveInput } from '../.
 import type { CarSpec } from '../../shared/cars';
 import { resolveSurface, Surface } from '../../shared/surfaces';
 import { impactFromDelta, type Impact } from '../../shared/audio-model';
+import { NitroTank, boostFactor } from '../../shared/nitro';
 import { JumpState, airLevel, jumpImpulse, jumpSpeed } from '../../shared/jump';
 import type { PhysicsWorld } from './world';
 
@@ -88,6 +89,8 @@ export class Vehicle {
   private impact: Impact | null = null;
   private pulled = false;
   private readonly jumpState = new JumpState();
+  /** Personal nitro tank. Carried across when the car transforms. */
+  readonly nitro = new NitroTank();
   /** Set on the step a hop fires; the game reads it once to play the sound. */
   private hopped = false;
   /** Seconds left of gentle over-speed drag after turning into another car, so momentum carries over. */
@@ -173,13 +176,16 @@ export class Vehicle {
 
     const target = steerAngle(input.steer, fwdSpeed, spec.maxSteer, spec.steerFalloffSpeed);
     this.steerCmd = approach(this.steerCmd, target, 3.2, dt);
-    const top = spec.topSpeed * speedFrac;
+    // Nitro: held key plus throttle, drawn from the personal tank.
+    const wantBoost = !!input.nitro && input.throttle > 0.02 && fwdSpeed > -0.5;
+    const boost = boostFactor(this.nitro.update(wantBoost, dt), this.nitro.active, spec.nitroForce, spec.nitroTop);
+    const top = spec.topSpeed * speedFrac * boost.top;
     const reverseTop = spec.reverseTopSpeed * speedFrac;
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3) * (this.grace > 0 ? MOMENTUM_GRACE_DRAG : 1);
     this.grace = Math.max(0, this.grace - dt);
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
-    const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
+    const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
     this.pulled = false;
 
     for (let i = 0; i < WHEELS; i++) {
@@ -304,6 +310,8 @@ export class Vehicle {
     next.body.setTranslation({ x: t.x, y: t.y + dy, z: t.z }, true);
     next.body.setRotation(q, true);
     next.body.setLinvel(lv, true);
+    next.nitro.level = old.nitro.level;
+    next.nitro.blend = old.nitro.blend;
     next.body.setAngvel(av, true);
     next.steerCmd = steer;
     next.velBefore = { x: lv.x, y: lv.y, z: lv.z }; // so the swap itself is not mistaken for a crash

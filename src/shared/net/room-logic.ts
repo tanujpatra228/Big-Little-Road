@@ -142,6 +142,8 @@ export class RoomLogic {
         return { out: [{ to: 'all', msg: { type: 'car', id: p.id, role: msg.role } }], close: [] };
       case 'horn':
         return { out: [{ to: { except: conn }, msg: { type: 'horn', id: p.id, on: msg.on } }], close: [] };
+      case 'nitro':
+        return { out: [{ to: { except: conn }, msg: { type: 'nitro', id: p.id, on: msg.on } }], close: [] };
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {

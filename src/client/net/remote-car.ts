@@ -26,6 +26,8 @@ export class RemoteCar {
   private readonly label: THREE.Sprite;
   private spin = 0;
   private shown = false;
+  private nitroOn = false;
+  private nitroAmount = 0;
 
   constructor(private readonly scene: THREE.Scene, private readonly pw: PhysicsWorld, info: PlayerInfo) {
     this.name = info.name;
@@ -40,6 +42,11 @@ export class RemoteCar {
 
   get visible(): boolean {
     return this.shown;
+  }
+
+  /** The other player's nitro started or stopped (told by the room). */
+  setNitro(on: boolean): void {
+    this.nitroOn = on;
   }
 
   setRole(role: CarRole): void {
@@ -77,6 +84,8 @@ export class RemoteCar {
       wheels.push({ x: sx * spec.trackHalf, y, z: sz * spec.wheelBaseHalf, steer: front ? s.steer : 0, spin: this.spin, contact: true });
     }
     this.xform.setWheels(wheels);
+    this.nitroAmount += ((this.nitroOn ? 1 : 0) - this.nitroAmount) * (1 - Math.exp(-9 * dt));
+    this.xform.mesh.setBoost(this.nitroAmount < 0.03 ? 0 : this.nitroAmount);
     this.xform.tick(dt);
     this.label.position.set(s.x, s.y + 1.5, s.z);
   }

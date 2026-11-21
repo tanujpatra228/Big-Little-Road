@@ -123,6 +123,8 @@ async function boot(): Promise<void> {
   let lastPoseAt = 0;
   let stillForMs = 0;
   let hornSent = false;
+  let nitroSent = false;
+  let wasBoosting = false;
 
   const refreshPanel = (): void => {
     const players: PanelPlayer[] = [...roster.values()].map((p) => ({ ...p, self: p.id === net.selfId, rtt: p.id === net.selfId ? net.rttMs : 0 }));
@@ -193,6 +195,18 @@ async function boot(): Promise<void> {
         camera.getWorldDirection(dir);
         const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
         audio.remoteHorn(rc.role, 1 / (1 + d / 18), d > 0.01 ? to.normalize().dot(right) : 0);
+      },
+      nitro(id, on) {
+        const rc = remotes.get(id);
+        if (!rc) return;
+        rc.setNitro(on);
+        if (!on) return;
+        const to = rc.position.clone().sub(camera.position);
+        const d = to.length();
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+        audio.whoosh(0.8 / (1 + d / 14), d > 0.01 ? to.normalize().dot(right) : 0);
       },
       prop(info) {
         tether.onProp(info);
@@ -316,11 +330,18 @@ async function boot(): Promise<void> {
     const hit = vehicle.consumeImpact();
     if (hit) audio.impact(hit, vehicle.surface);
     audio.update(
-      { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking },
+      { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking, boost: vehicle.nitro.active ? vehicle.nitro.blend : 0 },
       frame,
     );
 
     // Network: poses at 10 Hz while moving, 2 Hz when nearly still, none once parked.
+    const boosting = vehicle.nitro.active;
+    if (boosting && !wasBoosting) audio.whoosh();
+    wasBoosting = boosting;
+    if (boosting !== nitroSent) {
+      nitroSent = boosting;
+      net.sendNitro(boosting);
+    }
     const horning = input.isDown('KeyH');
     if (horning !== hornSent) {
       hornSent = horning;
@@ -339,7 +360,7 @@ async function boot(): Promise<void> {
     }
     const pose = vehicle.pose(acc / FIXED_DT);
     xform.update(vehicle, pose, frame);
-    chase.update(pose, vehicle.speed, frame);
+    chase.update(pose, vehicle.speed, frame, vehicle.nitro.active ? vehicle.nitro.blend : 0);
     stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
     hud.setAudio(!audio.running ? 'locked' : audio.isMuted ? 'muted' : 'on');
     hud.update(vehicle, role, frame, stage.quality());

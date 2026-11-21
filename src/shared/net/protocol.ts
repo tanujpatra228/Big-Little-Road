@@ -44,6 +44,8 @@ export type ClientMsg =
   | ({ type: 'pose' } & PoseFrame)
   | { type: 'car'; role: CarRole }
   | { type: 'horn'; on: boolean }
+  /** Nitro started or stopped, so others can show the flame. */
+  | { type: 'nitro'; on: boolean }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -61,6 +63,7 @@ export type ServerMsg =
   | ({ type: 'pose'; id: string } & PoseFrame)
   | { type: 'car'; id: string; role: CarRole }
   | { type: 'horn'; id: string; on: boolean }
+  | { type: 'nitro'; id: string; on: boolean }
   | { type: 'ping'; id: string; kind: PingKind; x: number; z: number }
   | { type: 'prop'; prop: PropInfo }
   | { type: 'goal'; id: string; by: string }
@@ -124,6 +127,8 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       return isRole(m.role) ? { type: 'car', role: m.role } : null;
     case 'horn':
       return typeof m.on === 'boolean' ? { type: 'horn', on: m.on } : null;
+    case 'nitro':
+      return typeof m.on === 'boolean' ? { type: 'nitro', on: m.on } : null;
     case 'ping':
       if (!(PING_KINDS as readonly unknown[]).includes(m.kind)) return null;
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;

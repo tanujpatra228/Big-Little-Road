@@ -48,6 +48,7 @@ export class InputDevices {
     let throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
     let steerTarget = (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0);
     let handbrake = k('KeyC');
+    let nitro = k('ShiftLeft', 'ShiftRight');
 
     const pad = this.pad();
     if (pad) {
@@ -60,6 +61,7 @@ export class InputDevices {
         steerTarget = ax;
       }
       handbrake = handbrake || (pad.buttons[2]?.pressed ?? false);
+      nitro = nitro || (pad.buttons[5]?.pressed ?? false) || (pad.buttons[4]?.pressed ?? false);
     }
 
     const padSteering = pad !== null && deadzone(pad.axes[0] ?? 0) !== 0;
@@ -67,6 +69,6 @@ export class InputDevices {
       const rate = steerTarget === 0 ? 7 : Math.sign(this.steerSmooth) !== Math.sign(steerTarget) ? 9 : 4.5;
       this.steerSmooth = approach(this.steerSmooth, steerTarget, rate, dt);
     }
-    return { throttle, steer: this.steerSmooth, handbrake };
+    return { throttle, steer: this.steerSmooth, handbrake, nitro };
   }
 }
