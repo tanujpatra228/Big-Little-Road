@@ -75,7 +75,7 @@ Build in this order, each as pure logic in `shared/` first, then wired in:
 ### Phase 4: Backyard content (weeks 6 to 8)
 - Seven zones around the patio spawn: sandpit, flowerbed, mud bog, hose river, woodpile, deck underside, lawn.
 - Free Roam as lobby: garage-door ready-up, secrets, stunt spots, collectibles, lawnmower and sprinkler on room clock.
-- Missions: Mud Bog Rescue, Plank Bridge, Rock Crawl, Dead Signal, then the Summit Run expedition. Mission runtime is data-driven (JSON definitions driving `mission-logic.ts`).
+- Missions: Mud Bog Rescue, Plank Bridge, Rock Crawl, Dead Signal, then the Summit Run expedition. The randomized RC Car Rescue Mission (`docs/features/rc-car-rescue-mission.md`) generalizes Mud Bog Rescue: build it as a scenario generator on top of these systems, three scenarios first, not before Phase 3 is done. Mission runtime is data-driven (JSON definitions driving `mission-logic.ts`).
 - Stars: complete, time, no resets. Late joiners enter at next checkpoint.
 - Every puzzle must pass the doc's tests: two-verb, solo, no waiting chores over 10 s, lag at 250 ms with 2 s windows, role swap.
 - Gate: a fresh group of 3 finishes the first mission in under 15 minutes with no verbal coaching from you.
