@@ -17,6 +17,10 @@ export class InputDevices {
     addEventListener('blur', () => this.keys.clear());
   }
 
+  isDown(code: string): boolean {
+    return this.keys.has(code);
+  }
+
   /** True once per physical key press. */
   wasPressed(code: string): boolean {
     return this.pressed.delete(code);

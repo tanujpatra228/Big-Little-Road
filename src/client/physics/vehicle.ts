@@ -2,10 +2,12 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { approach, clamp, driveCommand, steerAngle, type DriveInput } from '../../shared/driving';
 import type { CarSpec } from '../../shared/cars';
 import { resolveSurface, Surface } from '../../shared/surfaces';
+import { impactFromDelta, type Impact } from '../../shared/audio-model';
 import type { PhysicsWorld } from './world';
 
 const WHEELS = 4;
 export const FLIP_RESET_SECONDS = 10;
+const FIXED_STEP = 1 / 60;
 
 export interface Pose {
   x: number; y: number; z: number;
@@ -36,6 +38,8 @@ export class Vehicle {
   speed = 0;
   /** True while the driver is braking or on the handbrake. Drives the brake lights. */
   braking = false;
+  private velBefore = { x: 0, y: 0, z: 0 };
+  private impact: Impact | null = null;
 
   constructor(pw: PhysicsWorld, spec: CarSpec, x: number, z: number, yaw: number) {
     this.pw = pw;
@@ -107,6 +111,7 @@ export class Vehicle {
   step(input: DriveInput, dt: number): void {
     const { spec } = this;
     const fwdSpeed = this.forwardSpeed();
+    this.velBefore = this.body.linvel();
     this.speed = fwdSpeed;
 
     const t = this.body.translation();
@@ -168,6 +173,11 @@ export class Vehicle {
 
   /** Call after world.step(). */
   afterPhysics(): void {
+    const v = this.body.linvel();
+    // Gravity alone adds g*dt of downward speed per step; everything beyond that is a hit.
+    const gdt = -this.pw.world.gravity.y * FIXED_STEP;
+    const hit = impactFromDelta(v.x - this.velBefore.x, v.y - this.velBefore.y + gdt, v.z - this.velBefore.z);
+    if (hit && (!this.impact || hit.intensity > this.impact.intensity)) this.impact = hit;
     this.prev = this.cur;
     this.cur = this.readPose();
   }
@@ -181,6 +191,13 @@ export class Vehicle {
     const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
     const stuckUpsideDown = upY < 0.3 && Math.abs(this.speed) < 2.5;
     this.flippedFor = stuckUpsideDown ? this.flippedFor + dt : 0;
+  }
+
+  /** The hardest impact since the last call, or null. Read once per frame. */
+  consumeImpact(): Impact | null {
+    const i = this.impact;
+    this.impact = null;
+    return i;
   }
 
   get isFlipped(): boolean {

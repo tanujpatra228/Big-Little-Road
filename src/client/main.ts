@@ -11,6 +11,7 @@ import { ChaseCam } from './render/chase-cam';
 import { InputDevices } from './game/input';
 import { createStage } from './render/stage';
 import { runShowcase } from './game/showcase';
+import { GameAudio } from './audio/game-audio';
 import { Hud } from './ui/hud';
 import { TunePanel } from './ui/tune-panel';
 
@@ -34,6 +35,11 @@ async function boot(): Promise<void> {
 
   const chase = new ChaseCam(camera, terrain);
   const input = new InputDevices();
+
+  // Browsers only start audio after a gesture, so unlock on the first key, click or touch.
+  const audio = new GameAudio();
+  const unlock = (): void => audio.unlock();
+  for (const ev of ['keydown', 'pointerdown', 'touchstart'] as const) addEventListener(ev, unlock, { passive: true });
 
   const specs: Record<CarRole, CarSpec> = {
     scout: cloneSpec(CARS.scout),
@@ -94,6 +100,7 @@ async function boot(): Promise<void> {
   (window as unknown as { __blr: unknown }).__blr = {
     get vehicle() { return vehicle; },
     get role() { return role; },
+    audio,
     spawn,
   };
 
@@ -127,10 +134,21 @@ async function boot(): Promise<void> {
     if (steps === 5) acc = 0;
     if (vehicle.isOutOfBounds()) spawn(role, SPAWN.x, SPAWN.z, 0);
 
+    const drive = input.read(0);
+    if (input.wasPressed('KeyM')) audio.toggleMute();
+    audio.horn(input.isDown('KeyH'));
+    const hit = vehicle.consumeImpact();
+    if (hit) audio.impact(hit, vehicle.surface);
+    audio.update(
+      { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking },
+      frame,
+    );
+
     const pose = vehicle.pose(acc / FIXED_DT);
     mesh.update(vehicle, pose, frame);
     chase.update(pose, vehicle.speed, frame);
     stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
+    hud.setAudio(!audio.running ? 'locked' : audio.isMuted ? 'muted' : 'on');
     hud.update(vehicle, role, frame, stage.quality());
     grass.update(now / 1000, camera);
     stage.render(frame);
