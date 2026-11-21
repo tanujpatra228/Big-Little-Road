@@ -13,7 +13,7 @@ All sound is synthesized live with Web Audio. No audio files, nothing to downloa
 | Brake squeal | Narrow-band noise | Hard braking above 5 m/s on hard ground. Silent on mud, sand and water |
 | Impacts | Falling sine thump, noise burst, and a metallic clank on hard surfaces | Velocity change in one physics step. Crashes are horizontal, landings vertical. Rock rings bright, sand and mud land dull |
 | Horn | Two square tones, per-car pitch | Hold H |
-| Transformation | Servo whirr, air whoosh, two clanks | Switching car (yours and other players') |
+| Transformation | Servo over 1.4 s, grinding metal, a ratchet click as each part unlatches, a clank as each locks | Switching car (yours and other players'), timed with the animation (see car-transform.md) |
 | Ambience | Breeze bed, crickets, random bird chirps panned around the yard | Always on, very quiet |
 
 ## Volume controls
