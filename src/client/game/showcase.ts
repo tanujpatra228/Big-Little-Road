@@ -1,19 +1,23 @@
 import * as THREE from 'three';
-import { CARS, cloneSpec } from '../../shared/cars';
+import { CARS, cloneSpec, wheelRestY } from '../../shared/cars';
 import { generateTerrain } from '../../shared/terrain';
 import { CarMesh } from '../render/car-mesh';
 import type { Stage } from '../render/stage';
 import { buildTerrainMesh } from '../render/terrain-mesh';
+import { buildGrass } from '../render/grass';
 import type { WheelState } from '../physics/vehicle';
 
 /**
  * Review page (?showcase): all cars parked on the patio, camera slowly orbiting.
  * ?angle=<deg> freezes the orbit for screenshots, ?dist= and ?height= frame it,
- * ?focus=<0-4> centres the camera on one car (0 Scout, 1 Hauler, 2 Relay, 3 dead rescue, 4 revived).
+ * ?focus=<0-4> centres the camera on one car (0 Scout, 1 Hauler, 2 Relay, 3 dead rescue, 4 revived),
+ * and ?solo hides the others so side views are not blocked.
  */
 export function runShowcase(stage: Stage, params: URLSearchParams): void {
   const terrain = generateTerrain(20260);
   stage.scene.add(buildTerrainMesh(terrain));
+  const grass = buildGrass(terrain);
+  stage.scene.add(grass.group);
 
   const rescueSpec = cloneSpec(CARS.scout);
   rescueSpec.color = 0xf4d35e;
@@ -29,14 +33,16 @@ export function runShowcase(stage: Stage, params: URLSearchParams): void {
 
   const spacing = 3.4;
   const groundY = terrain.heightAt(0, 0);
+  const solo = params.has('solo') && params.has('focus') ? Number(params.get('focus')) : null;
   lineup.forEach((item, i) => {
+    if (solo !== null && i !== solo) return;
     const car = new CarMesh(item.spec, item.variant);
     const x = (i - (lineup.length - 1) / 2) * spacing;
     const wheels: WheelState[] = [];
     for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
       wheels.push({
         x: sx * item.spec.trackHalf,
-        y: -item.spec.half.y * 0.4 - item.spec.suspensionRest * 0.85,
+        y: wheelRestY(item.spec),
         z: sz * item.spec.wheelBaseHalf,
         steer: 0,
         spin: 0,
@@ -67,6 +73,7 @@ export function runShowcase(stage: Stage, params: URLSearchParams): void {
     if (!frozen) angle += dt * 0.12;
     stage.camera.position.set(center.x + Math.sin(angle) * dist, groundY + height, Math.cos(angle) * dist);
     stage.camera.lookAt(center);
+    grass.update(now / 1000, stage.camera);
     stage.render(dt);
   });
 }

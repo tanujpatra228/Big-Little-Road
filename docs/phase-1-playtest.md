@@ -44,9 +44,13 @@ Rock is deliberately 100%: big rock is a hazard, not a slow zone. Slowing cars d
 
 Braking fix: brakes used to be about 5 times too strong for the tyre grip, so every car flipped end over end when braking hard from top speed. Brakes are retuned so cars stop in roughly 1 s without pitching over, and tests enforce it.
 
+## Suspension travel (after playtest 3)
+
+Bump stops were shortened so wheels cannot rise through the bodywork: Scout 0.33, Hauler 0.35, Relay 0.32 (was 0.45, 0.5, 0.6). Tell us if the ride feels harsher on rough ground. Rock-field crossing rates did not change meaningfully (Hauler 7/8, Scout 6/8, Relay 5/8 for a scripted driver that avoids boulders).
+
 ## Known issues going in
 
-- Fence is a placeholder wall; cars bounce off it.
+- Fence is a leafy hedge wall, 12 high; cars bounce off it (tests confirm none escape). Real fence art is G5.
 - Shoreline colour around the pond is a cosmetic artifact.
 - Headless software rendering runs at about 10 fps, so judge feel only on real GPUs.
 - Gravity is 9.81; toy scale may want higher. Try 14 to 18 in the tuning panel first.

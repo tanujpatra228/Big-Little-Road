@@ -5,6 +5,7 @@ import { generateBoulders } from '../shared/boulders';
 import { createPhysicsWorld, FIXED_DT, initRapier, type PhysicsWorld } from './physics/world';
 import { FLIP_RESET_SECONDS, Vehicle } from './physics/vehicle';
 import { buildBoulderMesh, buildTerrainMesh } from './render/terrain-mesh';
+import { buildGrass } from './render/grass';
 import { CarMesh } from './render/car-mesh';
 import { ChaseCam } from './render/chase-cam';
 import { InputDevices } from './game/input';
@@ -28,6 +29,8 @@ async function boot(): Promise<void> {
   const boulders = generateBoulders(terrain);
   const pw: PhysicsWorld = createPhysicsWorld(terrain, boulders);
   scene.add(buildTerrainMesh(terrain), buildBoulderMesh(boulders));
+  const grass = buildGrass(terrain);
+  scene.add(grass.group);
 
   const chase = new ChaseCam(camera, terrain);
   const input = new InputDevices();
@@ -129,6 +132,7 @@ async function boot(): Promise<void> {
     chase.update(pose, vehicle.speed, frame);
     stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
     hud.update(vehicle, role, frame, stage.quality());
+    grass.update(now / 1000, camera);
     stage.render(frame);
   });
 }

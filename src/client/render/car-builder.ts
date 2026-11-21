@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { CarSpec } from '../../shared/cars';
+import { maxWheelRise, wheelRestY, type CarSpec } from '../../shared/cars';
 
 export type CarVariant = 'standard' | 'rescue';
 
@@ -180,12 +180,26 @@ function badge(text: string, bg: string, fg: string): THREE.Mesh {
   return m;
 }
 
+/**
+ * Front and rear lips of a wheel arch. They hang from the fender slab just outside the wheel's
+ * footprint (|z| beyond the tyre radius), so a rising wheel passes between them and never clips.
+ */
+function archLips(body: Parts, spec: CarSpec, mat: THREE.Material, sx: number, sz: number, slabBottom: number, span: number): void {
+  const lip = 0.26;
+  const reach = (spec.wheelRadius * span) / 2 - 0.025;
+  for (const side of [1, -1]) {
+    body.box(0.38, lip, 0.05, 0.02, mat, sx * (spec.trackHalf - 0.07), slabBottom - lip / 2 + 0.02, sz * spec.wheelBaseHalf + side * reach);
+  }
+}
+
 export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorOverride?: number): CarModel {
   const color = colorOverride ?? spec.color;
   const mats = makeMaterials(spec, color);
   const { x: hx, y: hy, z: hz } = spec.half;
   const body = new Parts();
-  const wheelY = -hy * 0.4 - spec.suspensionRest * 0.85;
+  const wheelY = wheelRestY(spec);
+  // Flares sit above the wheel's highest point (bump stop), plus a little air.
+  const flareLift = maxWheelRise(spec) + 0.02;
   const rescue = variant === 'rescue';
 
   if (spec.role === 'scout' || rescue) {
@@ -245,7 +259,8 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(0.06, 0.1, 0.03, 0.01, mats.accent, hx * 0.5, -hy * 0.15, hz + 0.19);
     body.box(hx * 1.9, hy * 0.4, 0.1, 0.04, mats.dark, 0, -hy * 0.2, -hz - 0.06);
     for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-      body.box(0.24, 0.07, spec.wheelRadius * 1.6, 0.03, mats.paint, sx * spec.trackHalf, wheelY + spec.wheelRadius + 0.05, sz * spec.wheelBaseHalf);
+      body.box(0.38, 0.17, spec.wheelRadius * 2.1, 0.06, mats.paint, sx * (spec.trackHalf - 0.07), wheelY + spec.wheelRadius + flareLift + 0.085, sz * spec.wheelBaseHalf);
+      archLips(body, spec, mats.paint, sx, sz, wheelY + spec.wheelRadius + flareLift, 2.1);
     }
     const roofY = hy * 2.1 + 0.05;
     body.tube([hx * 0.7, roofY, -hz * 0.6], [hx * 0.7, roofY, hz * 0.2], 0.018, mats.metal);
@@ -276,7 +291,8 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
       body.cyl(0.03, 0.03, hz * 0.8, mats.metal, s * (hx + 0.02), -hy * 0.7, -hz * 0.1, Math.PI / 2, 0, 0, 8);
     }
     for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-      body.box(0.26, 0.08, spec.wheelRadius * 1.9, 0.035, mats.paint, sx * spec.trackHalf, wheelY + spec.wheelRadius + 0.06, sz * spec.wheelBaseHalf);
+      body.box(0.38, 0.17, spec.wheelRadius * 2.3, 0.06, mats.paint, sx * (spec.trackHalf - 0.07), wheelY + spec.wheelRadius + flareLift + 0.085, sz * spec.wheelBaseHalf);
+      archLips(body, spec, mats.paint, sx, sz, wheelY + spec.wheelRadius + flareLift, 2.3);
     }
     body.box(hx * 0.3, 0.012, hz * 1.1, 0.005, mats.accent, 0, hy * 0.78 + 0.004, hz * 0.4);
     body.box(hx * 1.5, hy * 0.5, hz * 0.55, 0.05, mats.dark, 0, hy * 0.35, -hz * 0.72);

@@ -49,7 +49,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     wheelBaseHalf: 0.62,
     trackHalf: 0.55,
     suspensionRest: 0.32,
-    suspensionTravel: 0.45,
+    suspensionTravel: 0.33,
     suspensionStiffness: 14,
     suspensionCompression: 2.6,
     suspensionRelaxation: 3.4,
@@ -91,7 +91,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     wheelBaseHalf: 0.66,
     trackHalf: 0.68,
     suspensionRest: 0.36,
-    suspensionTravel: 0.5,
+    suspensionTravel: 0.35,
     suspensionStiffness: 18,
     suspensionCompression: 3.2,
     suspensionRelaxation: 4.0,
@@ -132,7 +132,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     wheelBaseHalf: 0.68,
     trackHalf: 0.62,
     suspensionRest: 0.42,
-    suspensionTravel: 0.6,
+    suspensionTravel: 0.32,
     suspensionStiffness: 12,
     suspensionCompression: 2.4,
     suspensionRelaxation: 3.2,
@@ -161,6 +161,22 @@ export const CARS: Record<CarRole, CarSpec> = {
     },
   },
 };
+
+/** Fraction of rest length the suspension is compressed to under the car's own weight, for visuals. */
+export const REST_SAG = 0.85;
+
+/** Wheel centre height in chassis space at rest. Visuals and the showcase both use this. */
+export function wheelRestY(spec: CarSpec): number {
+  return -spec.half.y * 0.4 - spec.suspensionRest * REST_SAG;
+}
+
+/**
+ * Highest the wheel centre can rise above its rest position: the bump stop. Fender flares and
+ * wheel arches are placed above this, so a compressed wheel can never clip through bodywork.
+ */
+export function maxWheelRise(spec: CarSpec): number {
+  return spec.suspensionTravel - (1 - REST_SAG) * spec.suspensionRest;
+}
 
 export const CAR_ORDER: CarRole[] = ['scout', 'hauler', 'relay'];
 

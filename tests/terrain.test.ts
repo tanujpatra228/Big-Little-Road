@@ -26,7 +26,7 @@ describe('terrain', () => {
   });
 
   it('fence rises at the edge', () => {
-    expect(t.heightAt(TERRAIN_SIZE / 2 - 1, 0)).toBeGreaterThan(15);
+    expect(t.heightAt(TERRAIN_SIZE / 2 - 1, 0)).toBeGreaterThan(8);
   });
 });
 

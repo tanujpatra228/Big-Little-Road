@@ -4,15 +4,101 @@ import { mulberry32 } from '../../shared/rng';
 import { WATER_LEVEL, type Terrain } from '../../shared/terrain';
 import type { Boulder } from '../../shared/boulders';
 
-const COLORS: Record<Surface, number> = {
-  [Surface.Grass]: 0x7aa84e,
-  [Surface.Patio]: 0xcfc6b2,
-  [Surface.Sand]: 0xe9cf8e,
-  [Surface.Mud]: 0x6b4a2f,
-  [Surface.Rock]: 0xa3a39f,
-  [Surface.Water]: 0x4a9fbf,
-  [Surface.Gravel]: 0xb8ae98,
-};
+/**
+ * Terrain colour is procedural, so surfaces get real detail and crisp, organic borders even though
+ * the mesh is coarse. Each vertex carries one-hot surface weights; the fragment shader jitters them
+ * with noise, sharpens them, then paints each surface from its own pattern.
+ * Vertex colour is only baked ambient occlusion: dips darken, rises brighten a touch.
+ */
+const HEDGE = 7; // weight slot for the hedge at the fence
+
+const terrainHelpers = /* glsl */ `
+  float t_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float t_noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(t_hash(i), t_hash(i + vec2(1.0, 0.0)), f.x), mix(t_hash(i + vec2(0.0, 1.0)), t_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+  float t_fbm(vec2 p) { return t_noise(p) * 0.55 + t_noise(p * 2.1) * 0.3 + t_noise(p * 4.3) * 0.15; }
+
+`;
+
+const terrainFragmentColor = /* glsl */ `
+  vec2 p = vWP.xz;
+  float nLow = t_fbm(p * 0.09);
+  float nMid = t_fbm(p * 0.45);
+  float nHi = t_noise(p * 5.0);
+
+  // Wiggle the borders, then sharpen.
+  float wig = (t_noise(p * 1.3) - 0.5) * 0.5 + (t_noise(p * 4.0) - 0.5) * 0.18;
+  vec4 wa = smoothstep(0.4, 0.6, vW0 + wig);
+  vec4 wb = smoothstep(0.4, 0.6, vW1 + wig);
+  float tot = dot(wa, vec4(1.0)) + dot(wb, vec4(1.0));
+  if (tot < 0.05) { wa = vW0; wb = vW1; tot = dot(wa, vec4(1.0)) + dot(wb, vec4(1.0)); } // never go black
+  wa /= max(tot, 1e-4); wb /= max(tot, 1e-4);
+
+  // Grass: mottled, with soft mowing stripes.
+  vec3 grass = mix(uGrassA, uGrassB, nLow * 0.8 + nMid * 0.35);
+  grass *= 1.0 + 0.06 * sin(p.x * 0.55 + nLow * 2.0) + (nHi - 0.5) * 0.06;
+
+  // Patio: pavers with grout.
+  vec2 cellId = floor(p / 1.5);
+  vec2 g = fract(p / 1.5);
+  float grout = 1.0 - smoothstep(0.0, 0.035, min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)));
+  vec3 patio = uPatio * (0.94 + t_hash(cellId) * 0.1 + (nHi - 0.5) * 0.06);
+  patio = mix(patio, patio * 0.62, grout);
+
+  // Sand: ripples and speckle.
+  float ripple = sin((p.x * 0.8 + p.y * 0.45) * 3.0 + nLow * 9.0) * 0.5 + 0.5;
+  vec3 sand = uSand * (0.93 + ripple * 0.09 + (nHi - 0.5) * 0.08);
+
+  // Mud: dark blotches.
+  vec3 mud = mix(uMud * 0.8, uMud * 1.15, nMid) * (0.95 + (nHi - 0.5) * 0.08);
+
+  // Rock: patchy with cracks.
+  float crack = smoothstep(0.0, 0.035, abs(t_fbm(p * 0.7) - 0.5));
+  vec3 rock = mix(uRock * 0.78, uRock * 1.08, nMid) * (0.82 + 0.18 * crack);
+
+  // Gravel: lots of small stones.
+  float stones = t_noise(p * 11.0) * 0.6 + t_noise(p * 27.0) * 0.4;
+  vec3 gravel = uGravel * (0.78 + stones * 0.42) * (0.94 + nMid * 0.1);
+
+  vec3 bed = mix(uMud, uSand, 0.35) * (0.8 + nMid * 0.2);
+  vec2 wall = vec2(vWP.x + vWP.z, vWP.y * 1.3);
+  float leaf = t_noise(wall * 2.2) * 0.6 + t_noise(wall * 7.0) * 0.4;
+  float height = clamp(vWP.y / 9.0, 0.0, 1.0);
+  vec3 hedge = mix(uGrassA * 0.55, uGrassB * 0.9, leaf) * (1.0 - 0.25 * height);
+
+  vec3 col = grass * wa.x + patio * wa.y + sand * wa.z + mud * wa.w
+           + rock * wb.x + bed * wb.y + gravel * wb.z + hedge * wb.w;
+  diffuseColor.rgb = col * vColor.rgb;
+`;
+
+function makeTerrainMaterial(): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  const colour = (hex: number): THREE.Color => new THREE.Color(hex);
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, {
+      uGrassA: { value: colour(0x5d9235) },
+      uGrassB: { value: colour(0x86b648) },
+      uPatio: { value: colour(0xcfc6b2) },
+      uSand: { value: colour(0xe9cf8e) },
+      uMud: { value: colour(0x6b4a2f) },
+      uRock: { value: colour(0xa3a39f) },
+      uGravel: { value: colour(0xb8ae98) },
+    });
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aW0;\nattribute vec4 aW1;\nvarying vec4 vW0;\nvarying vec4 vW1;\nvarying vec3 vWP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW0 = aW0; vW1 = aW1; vWP = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform vec3 uGrassA; uniform vec3 uGrassB; uniform vec3 uPatio; uniform vec3 uSand; uniform vec3 uMud; uniform vec3 uRock; uniform vec3 uGravel;\nvarying vec4 vW0;\nvarying vec4 vW1;\nvarying vec3 vWP;\n' + terrainHelpers,
+      )
+      .replace('#include <color_fragment>', terrainFragmentColor);
+  };
+  return material;
+}
 
 export function buildTerrainMesh(terrain: Terrain): THREE.Group {
   const n = terrain.points;
@@ -20,21 +106,31 @@ export function buildTerrainMesh(terrain: Terrain): THREE.Group {
   const cell = terrain.size / (n - 1);
   const positions = new Float32Array(n * n * 3);
   const colors = new Float32Array(n * n * 3);
+  const w0 = new Float32Array(n * n * 4);
+  const w1 = new Float32Array(n * n * 4);
   const rand = mulberry32(terrain.seed ^ 0x9e3779b9);
-  const c = new THREE.Color();
+
+  const h = (row: number, col: number): number =>
+    terrain.heights[Math.min(n - 1, Math.max(0, row)) * n + Math.min(n - 1, Math.max(0, col))] ?? 0;
 
   for (let row = 0; row < n; row++) {
     for (let col = 0; col < n; col++) {
       const i = row * n + col;
-      positions[i * 3] = -half + col * cell;
+      const x = -half + col * cell;
+      const z = -half + row * cell;
+      positions[i * 3] = x;
       positions[i * 3 + 1] = terrain.heights[i] ?? 0;
-      positions[i * 3 + 2] = -half + row * cell;
-      const edge = Math.max(Math.abs(positions[i * 3]!), Math.abs(positions[i * 3 + 2]!));
-      c.setHex(edge > half - 7 ? 0x4f7d45 : COLORS[(terrain.surfaces[i] ?? 0) as Surface]);
-      const shade = 0.92 + rand() * 0.12;
-      colors[i * 3] = c.r * shade;
-      colors[i * 3 + 1] = c.g * shade;
-      colors[i * 3 + 2] = c.b * shade;
+      positions[i * 3 + 2] = z;
+
+      // One-hot surface weights; the hedge replaces whatever is at the fence.
+      const slot = Math.max(Math.abs(x), Math.abs(z)) > half - 7 ? HEDGE : (terrain.surfaces[i] ?? 0);
+      (slot < 4 ? w0 : w1)[i * 4 + (slot % 4)] = 1;
+
+      // Baked occlusion: dips are darker, bumps a little brighter.
+      const avg = (h(row - 1, col) + h(row + 1, col) + h(row, col - 1) + h(row, col + 1)) / 4;
+      const curve = (terrain.heights[i] ?? 0) - avg;
+      const ao = Math.min(1.06, Math.max(0.78, 1 + curve * 0.45)) * (0.97 + rand() * 0.03);
+      colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = ao;
     }
   }
 
@@ -52,10 +148,12 @@ export function buildTerrainMesh(terrain: Terrain): THREE.Group {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aW0', new THREE.BufferAttribute(w0, 4));
+  geo.setAttribute('aW1', new THREE.BufferAttribute(w1, 4));
   geo.setIndex(indices);
   geo.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+  const mesh = new THREE.Mesh(geo, makeTerrainMaterial());
   mesh.receiveShadow = true;
 
   const water = new THREE.Mesh(
@@ -69,41 +167,36 @@ export function buildTerrainMesh(terrain: Terrain): THREE.Group {
   return group;
 }
 
-/** Grass tufts and rocks. They give the eye something to read speed from. */
+/** Pebbles on sand and gravel. Grass, flowers and boulders are built elsewhere. */
 function buildScatter(terrain: Terrain): THREE.Group {
   const rand = mulberry32(terrain.seed + 7);
   const group = new THREE.Group();
-  const tuftGeo = new THREE.ConeGeometry(0.16, 0.55, 4).translate(0, 0.27, 0);
-  const rockGeo = new THREE.DodecahedronGeometry(0.5, 0);
-  const tufts: THREE.Matrix4[] = [];
-  const rocks: THREE.Matrix4[] = [];
+  const geo = new THREE.IcosahedronGeometry(0.5, 0);
+  const pebbles: THREE.Matrix4[] = [];
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   const half = terrain.size / 2 - 10;
 
-  for (let i = 0; i < 9000 && (tufts.length < 3200 || rocks.length < 450); i++) {
+  for (let i = 0; i < 40000 && pebbles.length < 900; i++) {
     const x = (rand() * 2 - 1) * half;
     const z = (rand() * 2 - 1) * half;
     const s = terrain.surfaceAt(x, z);
-    const y = terrain.heightAt(x, z);
-    if (s === Surface.Grass && tufts.length < 3200) {
-      const k = 0.6 + rand() * 1.1;
-      m.compose(new THREE.Vector3(x, y, z), q.setFromEuler(e.set(0, rand() * 6.28, 0)), new THREE.Vector3(k, k, k));
-      tufts.push(m.clone());
-    } else if ((s === Surface.Gravel || s === Surface.Sand) && rocks.length < 450) {
-      // Pebbles only. Real boulders come from boulders.ts and have colliders.
-      const k = 0.12 + rand() * 0.22;
-      m.compose(new THREE.Vector3(x, y + k * 0.3, z), q.setFromEuler(e.set(rand() * 3, rand() * 3, rand() * 3)), new THREE.Vector3(k, k * 0.8, k));
-      rocks.push(m.clone());
-    }
+    if (s !== Surface.Gravel && s !== Surface.Sand) continue;
+    if (s === Surface.Sand && rand() < 0.6) continue; // gravel is pebblier than sand
+    const k = 0.1 + rand() * 0.2;
+    m.compose(
+      new THREE.Vector3(x, terrain.heightAt(x, z) + k * 0.2, z),
+      q.setFromEuler(e.set(rand() * 3, rand() * 3, rand() * 3)),
+      new THREE.Vector3(k, k * 0.7, k),
+    );
+    pebbles.push(m.clone());
   }
 
-  const tuftMesh = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ color: 0x8dc25a, flatShading: true }), tufts.length);
-  tufts.forEach((t, i) => tuftMesh.setMatrixAt(i, t));
-  const rockMesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x7d8086, flatShading: true }), rocks.length);
-  rocks.forEach((t, i) => rockMesh.setMatrixAt(i, t));
-  group.add(tuftMesh, rockMesh);
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x9a968c, flatShading: true, roughness: 1 }), pebbles.length);
+  pebbles.forEach((t, i) => mesh.setMatrixAt(i, t));
+  mesh.receiveShadow = true;
+  group.add(mesh);
   return group;
 }
 
@@ -123,8 +216,8 @@ export function buildBoulderMesh(boulders: readonly Boulder[]): THREE.InstancedM
     // A touch under the collider radius so the mesh never floats above what you hit.
     m.compose(new THREE.Vector3(p.x, p.y, p.z), q.setFromEuler(e.set(p.rx, p.ry, p.rz)), new THREE.Vector3(p.r * 0.97, p.r * 0.9, p.r * 0.97));
     mesh.setMatrixAt(i, m);
-    const tone = 0.45 + ((p.rx * 7.3 + p.rz * 3.1) % 1) * 0.14;
-    mesh.setColorAt(i, c.setRGB(tone, tone * 1.01, tone * (kind === 'rubble' ? 0.94 : 1.04)));
+    const tone = 0.34 + ((p.rx * 7.3 + p.rz * 3.1) % 1) * 0.12;
+    mesh.setColorAt(i, c.setRGB(tone * 0.97, tone, tone * (kind === 'rubble' ? 1.0 : 1.07)));
   });
   mesh.castShadow = true;
   mesh.receiveShadow = true;

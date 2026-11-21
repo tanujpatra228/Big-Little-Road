@@ -21,7 +21,7 @@ References to collect before any visual work (owner to pick or approve 5): Mario
 | Asset | Technique | Notes |
 |---|---|---|
 | Cars | Rounded-box bodies, cylinder tyres with tread bump, canopy, lights, decals as canvas textures, per-role silhouette (buggy cage, crawler winch and bumper, truck with mast) | Build once as a generator `buildCar(spec)`; shares geometry across instances. Spec already carries sizes and colours |
-| Terrain | Splat blend of 4 to 6 procedural textures (grass, sand, mud, rock, gravel) in a shader, vertex-baked ambient occlusion, detail noise | Replaces flat vertex colours. Textures generated on a canvas at load, no downloads |
+| Terrain | Procedural per-surface patterns in the fragment shader, one-hot surface weights jittered and sharpened for crisp borders, vertex-baked ambient occlusion | Replaces flat vertex colours. No texture downloads |
 | Grass and plants | Instanced blades and flowers with wind in the vertex shader, density by distance | Biggest "wow per line of code" item |
 | Rocks | Same jointed-sphere data as physics, rendered with displaced, noise-shaded meshes so the mesh matches the collider | Physics and visuals must stay in sync |
 | Props (deck, fence, flowerpots, hose, toys, woodpile) | Composed from bevelled boxes and cylinders | Each prop is a small generator function |
@@ -34,7 +34,9 @@ References to collect before any visual work (owner to pick or approve 5): Mario
 
 - G1 Light and sky: done. Warm late-afternoon sun to the side of the spawn heading, procedural sky dome with clouds and sun disc, baked sky environment for reflections, haze fog, Khronos Neutral tone mapping (keeps pastels, unlike ACES), warm grade and vignette, soft bloom, MSAA, texel-snapped shadows. Terrain palette softened to match, smooth shading, hedge colour at the fence.
 - G2 Cars v2: done. Generated models for Scout (cage, driver, engine, light bar), Hauler (cab, winch bumper, roof rack, snorkel), Relay (flares, spare tyre, signal mast with pulsing beacon) and the rescue car (dead and revived variants, battery slot), with clear-coat plastic, lathe tyres with lugs, swing arms, number badges, headlights, tail lights that brighten when braking. Merged to about 12 draw calls per car.
-- Next: G3 terrain. The weakest looking parts now are the terrain: cone grass tufts, blurry patio edge, and the tall olive fence wall.
+- G3 Terrain: mostly done. Real curved-blade grass (about 44k tufts in chunked instanced cells, wind sway, distance-based thinning), daisies and other flowers in clusters, a procedural terrain shader (mowing stripes, paver tiles on the patio, ripples in sand, cracked rock, speckled gravel, crisp organic borders with noise-wiggled edges), baked ambient occlusion in dips, pebbles on sand and gravel, and a lower leafy hedge fence. Still to do for G3: noise-shaded rock meshes that match the collider shapes, and grass that parts for passing cars.
+- Fender fix: wheel travel is now capped (bump stops) and fender flares are placed from that same limit (`maxWheelRise` in `cars.ts`), with arch lips outside the wheel footprint. A test drives each car through the boulder field and fails if any wheel rises past the limit the bodywork was built for.
+- Next: G4 effects (dust, mud and splash particles from wheels, tyre marks, water shader), then G5.
 
 ### Review URLs
 

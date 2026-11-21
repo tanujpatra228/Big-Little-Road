@@ -72,7 +72,7 @@ export function generateTerrain(seed: number): Terrain {
 
     // Fence: the edge rises steeply so nobody leaves the yard.
     const edge = Math.max(Math.abs(x), Math.abs(z));
-    h += smooth(half - 5.5, half - 2.5, edge) * 22;
+    h += smooth(half - 5.5, half - 2.5, edge) * 12;
     return h;
   };
 
