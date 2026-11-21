@@ -5,13 +5,13 @@ import { WATER_LEVEL, type Terrain } from '../../shared/terrain';
 import type { Boulder } from '../../shared/boulders';
 
 const COLORS: Record<Surface, number> = {
-  [Surface.Grass]: 0x5a8f3c,
-  [Surface.Patio]: 0xb9b2a4,
-  [Surface.Sand]: 0xe0c27a,
-  [Surface.Mud]: 0x5b4126,
-  [Surface.Rock]: 0x8b8e93,
-  [Surface.Water]: 0x2f6f8f,
-  [Surface.Gravel]: 0xa59d8c,
+  [Surface.Grass]: 0x7aa84e,
+  [Surface.Patio]: 0xcfc6b2,
+  [Surface.Sand]: 0xe9cf8e,
+  [Surface.Mud]: 0x6b4a2f,
+  [Surface.Rock]: 0xa3a39f,
+  [Surface.Water]: 0x4a9fbf,
+  [Surface.Gravel]: 0xb8ae98,
 };
 
 export function buildTerrainMesh(terrain: Terrain): THREE.Group {
@@ -29,8 +29,9 @@ export function buildTerrainMesh(terrain: Terrain): THREE.Group {
       positions[i * 3] = -half + col * cell;
       positions[i * 3 + 1] = terrain.heights[i] ?? 0;
       positions[i * 3 + 2] = -half + row * cell;
-      c.setHex(COLORS[(terrain.surfaces[i] ?? 0) as Surface]);
-      const shade = 0.88 + rand() * 0.2;
+      const edge = Math.max(Math.abs(positions[i * 3]!), Math.abs(positions[i * 3 + 2]!));
+      c.setHex(edge > half - 7 ? 0x4f7d45 : COLORS[(terrain.surfaces[i] ?? 0) as Surface]);
+      const shade = 0.92 + rand() * 0.12;
       colors[i * 3] = c.r * shade;
       colors[i * 3 + 1] = c.g * shade;
       colors[i * 3 + 2] = c.b * shade;
@@ -54,12 +55,12 @@ export function buildTerrainMesh(terrain: Terrain): THREE.Group {
   geo.setIndex(indices);
   geo.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
   mesh.receiveShadow = true;
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(terrain.size, terrain.size).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: 0x3f8fb5, transparent: true, opacity: 0.72, roughness: 0.2 }),
+    new THREE.MeshStandardMaterial({ color: 0x4aa7c9, transparent: true, opacity: 0.7, roughness: 0.15, metalness: 0.05 }),
   );
   water.position.y = WATER_LEVEL;
 
@@ -98,7 +99,7 @@ function buildScatter(terrain: Terrain): THREE.Group {
     }
   }
 
-  const tuftMesh = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ color: 0x77b24a, flatShading: true }), tufts.length);
+  const tuftMesh = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ color: 0x8dc25a, flatShading: true }), tufts.length);
   tufts.forEach((t, i) => tuftMesh.setMatrixAt(i, t));
   const rockMesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x7d8086, flatShading: true }), rocks.length);
   rocks.forEach((t, i) => rockMesh.setMatrixAt(i, t));

@@ -34,6 +34,8 @@ export class Vehicle {
   flippedFor = 0;
   grounded = 0;
   speed = 0;
+  /** True while the driver is braking or on the handbrake. Drives the brake lights. */
+  braking = false;
 
   constructor(pw: PhysicsWorld, spec: CarSpec, x: number, z: number, yaw: number) {
     this.pw = pw;
@@ -131,6 +133,7 @@ export class Vehicle {
     const reverseTop = spec.reverseTopSpeed * speedFrac;
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3);
+    this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
     const cmd = driveCommand(input, fwdSpeed, spec.enginePower, top, reverseTop, spec.brakeForce, WHEELS, traction);
 
     for (let i = 0; i < WHEELS; i++) {

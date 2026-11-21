@@ -8,6 +8,8 @@ import { buildBoulderMesh, buildTerrainMesh } from './render/terrain-mesh';
 import { CarMesh } from './render/car-mesh';
 import { ChaseCam } from './render/chase-cam';
 import { InputDevices } from './game/input';
+import { createStage } from './render/stage';
+import { runShowcase } from './game/showcase';
 import { Hud } from './ui/hud';
 import { TunePanel } from './ui/tune-panel';
 
@@ -16,32 +18,17 @@ const params = new URLSearchParams(location.search);
 
 async function boot(): Promise<void> {
   await initRapier();
+  const stage = createStage(params);
+  if (params.has('showcase')) {
+    runShowcase(stage, params);
+    return;
+  }
+  const { scene, camera } = stage;
   const terrain = generateTerrain(SEED);
   const boulders = generateBoulders(terrain);
   const pw: PhysicsWorld = createPhysicsWorld(terrain, boulders);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = true;
-  document.body.appendChild(renderer.domElement);
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x9cc7e6);
-  scene.fog = new THREE.Fog(0x9cc7e6, 90, 230);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6b45, 1.1));
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -30;
-  sc.right = sc.top = 30;
-  sc.near = 1;
-  sc.far = 120;
-  scene.add(sun, sun.target);
   scene.add(buildTerrainMesh(terrain), buildBoulderMesh(boulders));
 
-  const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 400);
   const chase = new ChaseCam(camera, terrain);
   const input = new InputDevices();
 
@@ -98,11 +85,7 @@ async function boot(): Promise<void> {
 
   spawn('scout', SPAWN.x, SPAWN.z, 0);
 
-  addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
+  addEventListener('resize', () => stage.resize());
 
   // Test hook for automated runs.
   (window as unknown as { __blr: unknown }).__blr = {
@@ -113,7 +96,7 @@ async function boot(): Promise<void> {
 
   let last = performance.now();
   let acc = 0;
-  renderer.setAnimationLoop((now) => {
+  stage.renderer.setAnimationLoop((now) => {
     const frame = Math.min(0.1, (now - last) / 1000);
     last = now;
     acc += frame;
@@ -142,12 +125,11 @@ async function boot(): Promise<void> {
     if (vehicle.isOutOfBounds()) spawn(role, SPAWN.x, SPAWN.z, 0);
 
     const pose = vehicle.pose(acc / FIXED_DT);
-    mesh.update(vehicle, pose);
+    mesh.update(vehicle, pose, frame);
     chase.update(pose, vehicle.speed, frame);
-    sun.position.set(pose.x + 35, pose.y + 55, pose.z + 25);
-    sun.target.position.set(pose.x, pose.y, pose.z);
-    hud.update(vehicle, role, frame);
-    renderer.render(scene, camera);
+    stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
+    hud.update(vehicle, role, frame, stage.quality());
+    stage.render(frame);
   });
 }
 

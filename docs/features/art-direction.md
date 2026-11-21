@@ -30,6 +30,17 @@ References to collect before any visual work (owner to pick or approve 5): Mario
 | Effects | Dust, mud spray, water splash, tyre marks, boost trail as instanced particles keyed to the surface under each wheel | Doubles as gameplay feedback |
 | Post | Tone mapping and colour grade always on; bloom, soft SSAO, vignette behind a quality setting | Auto-lower on slow GPUs |
 
+## Status
+
+- G1 Light and sky: done. Warm late-afternoon sun to the side of the spawn heading, procedural sky dome with clouds and sun disc, baked sky environment for reflections, haze fog, Khronos Neutral tone mapping (keeps pastels, unlike ACES), warm grade and vignette, soft bloom, MSAA, texel-snapped shadows. Terrain palette softened to match, smooth shading, hedge colour at the fence.
+- G2 Cars v2: done. Generated models for Scout (cage, driver, engine, light bar), Hauler (cab, winch bumper, roof rack, snorkel), Relay (flares, spare tyre, signal mast with pulsing beacon) and the rescue car (dead and revived variants, battery slot), with clear-coat plastic, lathe tyres with lugs, swing arms, number badges, headlights, tail lights that brighten when braking. Merged to about 12 draw calls per car.
+- Next: G3 terrain. The weakest looking parts now are the terrain: cone grass tufts, blurry patio edge, and the tall olive fence wall.
+
+### Review URLs
+
+- `/?showcase` all five cars on the patio, orbiting. Add `&angle=<deg>` to freeze, `&focus=0..4` to centre one car, `&dist=` and `&height=` to frame.
+- `?quality=low|high` pins the quality tier. Without it the game starts high and drops to low if it averages under 38 fps for 3 seconds. Low skips post-processing, bloom, MSAA and uses smaller shadows.
+
 ## Milestones
 
 Each is shippable and screenshot-reviewed.

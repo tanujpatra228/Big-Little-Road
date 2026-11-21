@@ -47,7 +47,7 @@ export class Hud {
     document.body.appendChild(this.root);
   }
 
-  update(v: Vehicle, role: CarRole, dt: number): void {
+  update(v: Vehicle, role: CarRole, dt: number, quality = ''): void {
     // Toy-scale numbers: show units/s * 3.6 so top speeds read like km/h.
     this.speed.innerHTML = `${Math.abs(v.speed * 3.6).toFixed(0)}<small>km/h</small>`;
     this.info.textContent = `${SURFACE_NAMES[v.surface]}${v.grounded === 0 ? ' (airborne)' : ''}`;
@@ -62,7 +62,7 @@ export class Hud {
     this.frames++;
     this.acc += dt;
     if (this.acc >= 0.5) {
-      this.fps.textContent = `${Math.round(this.frames / this.acc)} fps`;
+      this.fps.textContent = `${Math.round(this.frames / this.acc)} fps${quality ? ` · ${quality}` : ''}`;
       this.frames = 0;
       this.acc = 0;
     }
