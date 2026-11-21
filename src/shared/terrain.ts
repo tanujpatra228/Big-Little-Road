@@ -4,6 +4,8 @@ import { Surface } from './surfaces';
 export const TERRAIN_SIZE = 160; // world units, centred on the origin
 export const TERRAIN_POINTS = 257; // heightfield vertices per side (0.625 m cells: crisp enough for a platform wall)
 export const WATER_LEVEL = -1.2;
+/** Mean height of the mud bog floor. Kept clear of the water plane. */
+export const MUD_FLOOR = -0.45;
 export const SPAWN: Readonly<{ x: number; z: number }> = { x: 0, z: -2 };
 
 export interface Terrain {
@@ -72,7 +74,8 @@ export function generateTerrain(seed: number): Terrain {
     h += sand * (1.8 + Math.sin(x * 0.22 + z * 0.1) * 1.4 + noise(x * 0.09, z * 0.09, 2) * 1.2);
 
     const mud = mask(MUD, x, z, 9);
-    h = h * (1 - mud) + mud * (-1.6 + noise(x * 0.2, z * 0.2, 2) * 0.35);
+    // A shallow bog floor, always above the waterline (WATER_LEVEL) so it reads as mud, never as a pond.
+    h = h * (1 - mud) + mud * (MUD_FLOOR + noise(x * 0.2, z * 0.2, 2) * 0.3);
 
     const rock = mask(ROCK, x, z, 8);
     h += rock * (1.2 + (noise(x * 0.14, z * 0.14, 3) + 1) * 1.6);

@@ -32,6 +32,12 @@ export class InputDevices {
     return null;
   }
 
+  /** Gamepad right stick (camera look), each axis -1..1, with a dead zone. */
+  look(): { x: number; y: number } {
+    const pad = this.pad();
+    return pad ? { x: deadzone(pad.axes[2] ?? 0), y: deadzone(pad.axes[3] ?? 0) } : { x: 0, y: 0 };
+  }
+
   private padJump = false;
 
   /** True once per press of the jump key (Space) or gamepad A. Call once per frame. */

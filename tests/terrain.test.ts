@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { generateTerrain, SPAWN, TERRAIN_SIZE } from '../src/shared/terrain';
+import { generateTerrain, SPAWN, TERRAIN_SIZE, WATER_LEVEL } from '../src/shared/terrain';
 import { Surface } from '../src/shared/surfaces';
 import { createPhysicsWorld, initRapier } from '../src/client/physics/world';
 
@@ -23,6 +23,23 @@ describe('terrain', () => {
     for (const s of [Surface.Grass, Surface.Patio, Surface.Sand, Surface.Mud, Surface.Rock, Surface.Water, Surface.Gravel]) {
       expect(seen.has(s)).toBe(true);
     }
+  });
+
+  it('mud is always above the waterline, so it never looks like a pond', () => {
+    let mud = 0;
+    for (const seed of [1234, 20260, 7]) {
+      const g = generateTerrain(seed);
+      for (let i = 0; i < g.surfaces.length; i++) {
+        if (g.surfaces[i] !== Surface.Mud) continue;
+        mud++;
+        expect(g.heights[i]!).toBeGreaterThan(WATER_LEVEL + 0.3);
+      }
+    }
+    expect(mud).toBeGreaterThan(1000);
+  });
+
+  it('water is only ever in the pond, below the waterline', () => {
+    for (let i = 0; i < t.surfaces.length; i++) if (t.surfaces[i] === Surface.Water) expect(t.heights[i]!).toBeLessThan(WATER_LEVEL + 0.45);
   });
 
   it('fence rises at the edge', () => {

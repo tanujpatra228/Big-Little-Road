@@ -52,8 +52,14 @@ const terrainFragmentColor = /* glsl */ `
   float ripple = sin((p.x * 0.8 + p.y * 0.45) * 3.0 + nLow * 9.0) * 0.5 + 0.5;
   vec3 sand = uSand * (0.93 + ripple * 0.09 + (nHi - 0.5) * 0.08);
 
-  // Mud: dark blotches.
-  vec3 mud = mix(uMud * 0.8, uMud * 1.15, nMid) * (0.95 + (nHi - 0.5) * 0.08);
+  // Mud: wet dark clay with drier lighter crusts, churned ruts and a glossy sheen in the wettest patches.
+  float mudWet = smoothstep(0.45, 0.65, t_fbm(p * 0.32 + 7.0));
+  float rut = abs(sin((p.x * 0.35 - p.y * 0.2) * 2.4 + nLow * 14.0));
+  float clump = t_noise(p * 6.0) * 0.5 + t_noise(p * 15.0) * 0.5;
+  vec3 mudDry = uMud * vec3(1.35, 1.22, 1.05) * (0.86 + clump * 0.34);
+  vec3 mudWetCol = uMud * vec3(0.78, 0.64, 0.52) * (0.88 + clump * 0.24);
+  vec3 mud = mix(mudDry, mudWetCol, mudWet);
+  mud *= 0.86 + 0.14 * smoothstep(0.0, 0.5, rut);
 
   // Rock: patchy with cracks.
   float crack = smoothstep(0.0, 0.035, abs(t_fbm(p * 0.7) - 0.5));
@@ -83,7 +89,7 @@ function makeTerrainMaterial(): THREE.MeshStandardMaterial {
       uGrassB: { value: colour(0x86b648) },
       uPatio: { value: colour(0xcfc6b2) },
       uSand: { value: colour(0xe9cf8e) },
-      uMud: { value: colour(0x6b4a2f) },
+      uMud: { value: colour(0x5a3b24) },
       uRock: { value: colour(0xa3a39f) },
       uGravel: { value: colour(0xb8ae98) },
     });
@@ -95,7 +101,8 @@ function makeTerrainMaterial(): THREE.MeshStandardMaterial {
         '#include <common>',
         '#include <common>\nuniform vec3 uGrassA; uniform vec3 uGrassB; uniform vec3 uPatio; uniform vec3 uSand; uniform vec3 uMud; uniform vec3 uRock; uniform vec3 uGravel;\nvarying vec4 vW0;\nvarying vec4 vW1;\nvarying vec3 vWP;\n' + terrainHelpers,
       )
-      .replace('#include <color_fragment>', terrainFragmentColor);
+      .replace('#include <color_fragment>', terrainFragmentColor)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.62, mudWet * wa.w);');
   };
   return material;
 }

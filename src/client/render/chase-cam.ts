@@ -13,6 +13,11 @@ export class ChaseCam {
 
   constructor(readonly camera: THREE.PerspectiveCamera, private terrain: Terrain) {}
 
+  /** Current heading of the camera, radians (0 along +z). */
+  get heading(): number {
+    return this.yaw;
+  }
+
   snap(): void {
     this.ready = false;
   }

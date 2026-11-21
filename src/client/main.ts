@@ -8,6 +8,7 @@ import { buildBoulderMesh, buildTerrainMesh } from './render/terrain-mesh';
 import { buildGrass } from './render/grass';
 import { CarTransformer } from './render/car-transformer';
 import { ChaseCam } from './render/chase-cam';
+import { OrbitCam } from './render/orbit-cam';
 import { InputDevices } from './game/input';
 import { createStage } from './render/stage';
 import { runShowcase } from './game/showcase';
@@ -48,6 +49,7 @@ async function boot(): Promise<void> {
   let celebrateUntil = 0;
 
   const chase = new ChaseCam(camera, terrain);
+  const orbit = new OrbitCam(camera, terrain, stage.renderer.domElement);
   const input = new InputDevices();
 
   // Browsers only start audio after a gesture, so unlock on the first key, click or touch.
@@ -271,6 +273,8 @@ async function boot(): Promise<void> {
     celebrate,
     remotes,
     get tether() { return tether; },
+    camera,
+    get orbit() { return orbit; },
     spawn,
   };
 
@@ -290,6 +294,16 @@ async function boot(): Promise<void> {
 
     // Other players' cars first, so their solid stand-ins and hitches are current for this frame.
     for (const r of remotes.values()) r.update(performance.now(), frame);
+    if (input.wasPressed('KeyV')) {
+      if (orbit.active) {
+        orbit.leave();
+        chase.snap();
+        hud.toast('Chase camera', 'V for the orbit camera', 1800);
+      } else {
+        orbit.enter(chase.heading, chase.distance, chase.height);
+        hud.toast('Orbit camera', 'Drag to look around, wheel to zoom, V to go back', 3200);
+      }
+    }
     if (input.wasPressed('KeyF')) tether.toggle();
     if (input.wasPressed('KeyT')) tether.requestReset();
     const rope = tether.update();
@@ -360,7 +374,9 @@ async function boot(): Promise<void> {
     }
     const pose = vehicle.pose(acc / FIXED_DT);
     xform.update(vehicle, pose, frame);
-    chase.update(pose, vehicle.speed, frame, vehicle.nitro.active ? vehicle.nitro.blend : 0);
+    const boostNow = vehicle.nitro.active ? vehicle.nitro.blend : 0;
+    if (orbit.active) orbit.update(pose, frame, boostNow, input.look());
+    else chase.update(pose, vehicle.speed, frame, boostNow);
     stage.followSun(new THREE.Vector3(pose.x, pose.y, pose.z));
     hud.setAudio(!audio.running ? 'locked' : audio.isMuted ? 'muted' : 'on');
     hud.update(vehicle, role, frame, stage.quality());
