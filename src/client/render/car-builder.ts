@@ -2,12 +2,49 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { wheelRestY, type CarSpec } from '../../shared/cars';
+import type { FrameId, RegionId } from '../../shared/transform-anim';
 
 export type CarVariant = 'standard' | 'rescue';
 
+/** One of the five big boxes every car is built around, kept as numbers so it can morph into another car's. */
+export interface FrameSpec {
+  id: FrameId;
+  size: [number, number, number];
+  pos: [number, number, number];
+  rot: [number, number, number];
+  mat: THREE.Material;
+}
+
+/** A small shape that is not one of the big boxes: roll cage, rack, lights, glass and so on. */
+export interface DetailPiece {
+  geo: THREE.BufferGeometry;
+  mat: THREE.Material;
+}
+
+/** What the transformation needs to take a car apart: its big boxes and its details sorted by where they sit. */
+export interface ModelParts {
+  frames: Map<FrameId, FrameSpec>;
+  details: Record<RegionId, DetailPiece[]>;
+}
+
 /** Collects shapes and merges everything that shares a material into one mesh. */
-class Parts {
+export class Parts {
   private groups = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  private readonly frames = new Map<FrameId, FrameSpec>();
+  private readonly details: Record<RegionId, DetailPiece[]> = { top: [], front: [], rear: [], side: [] };
+  private inFrame = false;
+
+  /** `half` is the chassis half extents, used to sort details into regions. */
+  constructor(private readonly half: { x: number; y: number; z: number } = { x: 0.5, y: 0.25, z: 1 }) {}
+
+  /** Which part of the car a detail belongs to, from where its centre sits. */
+  private region(cx: number, cy: number, cz: number): RegionId {
+    if (cy > this.half.y * 0.9) return 'top';
+    if (cz > this.half.z * 0.55) return 'front';
+    if (cz < -this.half.z * 0.55) return 'rear';
+    return 'side';
+  }
+
   private readonly m = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly e = new THREE.Euler();
@@ -20,6 +57,24 @@ class Parts {
     const list = this.groups.get(mat) ?? [];
     list.push(g);
     this.groups.set(mat, list);
+    if (!this.inFrame) {
+      g.computeBoundingBox();
+      const c = g.boundingBox!.getCenter(new THREE.Vector3());
+      this.details[this.region(c.x, c.y, c.z)].push({ geo: g, mat });
+    }
+  }
+
+  /** A big structural box. Drawn like any box, but its numbers are kept for the transformation. */
+  frame(id: FrameId, w: number, h: number, d: number, r: number, mat: THREE.Material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0): void {
+    this.inFrame = true;
+    this.box(w, h, d, r, mat, x, y, z, rx, ry, rz);
+    this.inFrame = false;
+    this.frames.set(id, { id, size: [w, h, d], pos: [x, y, z], rot: [rx, ry, rz], mat });
+  }
+
+  /** Everything the transformation needs. */
+  parts(): ModelParts {
+    return { frames: this.frames, details: this.details };
   }
 
   box(w: number, h: number, d: number, r: number, mat: THREE.Material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0): void {
@@ -149,6 +204,12 @@ function buildWheel(spec: CarSpec, mats: CarMaterials, rimMat: THREE.Material): 
 
 export interface CarModel {
   group: THREE.Group;
+  /** The merged body shapes, the only part of the group the transformation takes apart. */
+  bodyGroup: THREE.Group;
+  /** Number decals on the doors. */
+  badges: THREE.Mesh[];
+  /** The big boxes and details, for the transformation. */
+  parts: ModelParts;
   /** Wheel pivots in vehicle wheel order. `flip` is true for wheels on the -x side. */
   wheels: Array<{ pivot: THREE.Group; spin: THREE.Group; flip: boolean }>;
   /** Swing arms from the body to each wheel, re-aimed every frame so the suspension reads. */
@@ -178,26 +239,27 @@ function badge(text: string, bg: string, fg: string): THREE.Mesh {
   return m;
 }
 
-export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorOverride?: number): CarModel {
-  const color = colorOverride ?? spec.color;
-  const mats = makeMaterials(spec, color);
+/**
+ * The car body as shapes, before it is merged: the five big boxes (kept as numbers) and the details.
+ * Pure geometry and materials, no DOM, so tests can build it in node.
+ */
+export function buildBody(spec: CarSpec, mats: CarMaterials, variant: CarVariant = 'standard'): Parts {
   const { x: hx, y: hy, z: hz } = spec.half;
-  const body = new Parts();
-  const wheelY = wheelRestY(spec);
+  const body = new Parts(spec.half);
   const rescue = variant === 'rescue';
 
   if (spec.role === 'scout' || rescue) {
     // Desert buggy: low tub, open cage, empty seat (cars are the characters), rear engine, light bar.
-    body.box(hx * 1.96, hy * 1.2, hz * 1.84, rescue ? 0.12 : 0.07, mats.paint, 0, -hy * 0.1, 0);
-    body.box(hx * 1.6, hy * 0.8, hz * 0.55, 0.07, mats.paint, 0, -hy * 0.02, hz * 0.86, -0.2);
-    body.box(hx * 1.6, hy * 0.5, hz * 1.6, 0.05, mats.dark, 0, -hy * 0.85, 0);
+    body.frame('lower', hx * 1.96, hy * 1.2, hz * 1.84, rescue ? 0.12 : 0.07, mats.paint, 0, -hy * 0.1, 0);
+    body.frame('hood', hx * 1.6, hy * 0.8, hz * 0.55, 0.07, mats.paint, 0, -hy * 0.02, hz * 0.86, -0.2);
+    body.frame('under', hx * 1.6, hy * 0.5, hz * 1.6, 0.05, mats.dark, 0, -hy * 0.85, 0);
     body.box(hx * 0.5, 0.012, hz * 1.2, 0.005, mats.accent, hx * 0.2, hy * 0.5 + 0.004, 0.05);
     body.box(hx * 0.5, 0.012, hz * 1.2, 0.005, mats.accent, -hx * 0.2, hy * 0.5 + 0.004, 0.05);
     if (!rescue) {
-      body.box(hx * 1.4, hy * 1.0, hz * 0.5, 0.05, mats.dark, 0, hy * 0.55, -hz * 0.62);
+      body.frame('tail', hx * 1.4, hy * 1.0, hz * 0.5, 0.05, mats.dark, 0, hy * 0.55, -hz * 0.62);
       body.cyl(0.035, 0.045, 0.42, mats.metal, hx * 0.5, hy * 0.5, -hz * 1.0, Math.PI / 2 - 0.2, 0, 0, 8);
       body.cyl(0.035, 0.045, 0.42, mats.metal, -hx * 0.5, hy * 0.5, -hz * 1.0, Math.PI / 2 - 0.2, 0, 0, 8);
-      body.box(0.3, 0.2, 0.3, 0.05, mats.dark, 0, hy * 0.75, -hz * 0.05);
+      body.frame('cab', 0.3, 0.2, 0.3, 0.05, mats.dark, 0, hy * 0.75, -hz * 0.05);
       body.box(0.3, 0.3, 0.07, 0.04, mats.dark, 0, hy * 1.0 + 0.1, -hz * 0.2);
       const cage = (ax: number): void => {
         body.tube([ax, hy * 0.4, -hz * 0.08], [ax, hy + 0.66, -hz * 0.08], 0.024, mats.metal);
@@ -224,10 +286,10 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(hx * 0.4, 0.05, 0.04, 0.02, mats.taillight, -hx * 0.55, hy * 0.2, -hz * 0.93);
   } else if (spec.role === 'hauler') {
     // Rock crawler: tall boxy cab, winch bumper, roof rack, snorkel.
-    body.box(hx * 1.96, hy * 1.5, hz * 1.9, 0.08, mats.paint, 0, -hy * 0.05, 0);
-    body.box(hx * 1.8, hy * 1.7, hz * 1.0, 0.09, mats.paint, 0, hy * 1.25, -hz * 0.2);
-    body.box(hx * 1.72, hy * 0.7, hz * 0.55, 0.07, mats.paint, 0, hy * 0.55, hz * 0.62);
-    body.box(hx * 1.6, hy * 0.5, hz * 1.7, 0.05, mats.dark, 0, -hy * 0.9, 0);
+    body.frame('lower', hx * 1.96, hy * 1.5, hz * 1.9, 0.08, mats.paint, 0, -hy * 0.05, 0);
+    body.frame('cab', hx * 1.8, hy * 1.7, hz * 1.0, 0.09, mats.paint, 0, hy * 1.25, -hz * 0.2);
+    body.frame('hood', hx * 1.72, hy * 0.7, hz * 0.55, 0.07, mats.paint, 0, hy * 0.55, hz * 0.62);
+    body.frame('under', hx * 1.6, hy * 0.5, hz * 1.7, 0.05, mats.dark, 0, -hy * 0.9, 0);
     body.box(hx * 1.4, hy * 0.85, 0.02, 0.01, mats.glass, 0, hy * 1.4, hz * 0.3 + 0.006);
     body.box(hx * 1.4, hy * 0.7, 0.02, 0.01, mats.glass, 0, hy * 1.4, -hz * 0.7 - 0.006);
     for (const s of [1, -1]) {
@@ -237,7 +299,7 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(hx * 2.02, hy * 0.5, 0.14, 0.04, mats.dark, 0, -hy * 0.15, hz + 0.08);
     body.cyl(0.07, 0.07, hx * 1.2, mats.metal, 0, -hy * 0.05, hz + 0.17, 0, 0, Math.PI / 2, 12);
     body.box(0.06, 0.1, 0.03, 0.01, mats.accent, hx * 0.5, -hy * 0.15, hz + 0.19);
-    body.box(hx * 1.9, hy * 0.4, 0.1, 0.04, mats.dark, 0, -hy * 0.2, -hz - 0.06);
+    body.frame('tail', hx * 1.9, hy * 0.4, 0.1, 0.04, mats.dark, 0, -hy * 0.2, -hz - 0.06);
     const roofY = hy * 2.1 + 0.05;
     body.tube([hx * 0.7, roofY, -hz * 0.6], [hx * 0.7, roofY, hz * 0.2], 0.018, mats.metal);
     body.tube([-hx * 0.7, roofY, -hz * 0.6], [-hx * 0.7, roofY, hz * 0.2], 0.018, mats.metal);
@@ -254,10 +316,10 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(0.12, 0.1, 0.04, 0.02, mats.taillight, -hx * 0.8, hy * 0.2, -hz * 0.96);
   } else {
     // Trophy truck: long hood, cab, spare tyre, signal mast with beacon.
-    body.box(hx * 1.96, hy * 1.3, hz * 1.9, 0.08, mats.paint, 0, -hy * 0.1, 0);
-    body.box(hx * 1.6, hy * 0.7, hz * 0.7, 0.09, mats.paint, 0, hy * 0.4, hz * 0.55);
-    body.box(hx * 1.72, hy * 1.5, hz * 0.7, 0.1, mats.paint, 0, hy * 1.05, -hz * 0.15);
-    body.box(hx * 1.6, hy * 0.5, hz * 1.7, 0.05, mats.dark, 0, -hy * 0.9, 0);
+    body.frame('lower', hx * 1.96, hy * 1.3, hz * 1.9, 0.08, mats.paint, 0, -hy * 0.1, 0);
+    body.frame('hood', hx * 1.6, hy * 0.7, hz * 0.7, 0.09, mats.paint, 0, hy * 0.4, hz * 0.55);
+    body.frame('cab', hx * 1.72, hy * 1.5, hz * 0.7, 0.1, mats.paint, 0, hy * 1.05, -hz * 0.15);
+    body.frame('under', hx * 1.6, hy * 0.5, hz * 1.7, 0.05, mats.dark, 0, -hy * 0.9, 0);
     body.box(hx * 0.36, 0.06, hz * 0.2, 0.02, mats.dark, 0, hy * 0.82, hz * 0.55);
     body.box(hx * 1.3, hy * 0.8, 0.02, 0.01, mats.glass, 0, hy * 1.2, hz * 0.2 + 0.006, -0.25);
     body.box(hx * 1.3, hy * 0.7, 0.02, 0.01, mats.glass, 0, hy * 1.2, -hz * 0.5 - 0.006);
@@ -267,7 +329,7 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
       body.cyl(0.03, 0.03, hz * 0.8, mats.metal, s * (hx + 0.02), -hy * 0.7, -hz * 0.1, Math.PI / 2, 0, 0, 8);
     }
     body.box(hx * 0.3, 0.012, hz * 1.1, 0.005, mats.accent, 0, hy * 0.78 + 0.004, hz * 0.4);
-    body.box(hx * 1.5, hy * 0.5, hz * 0.55, 0.05, mats.dark, 0, hy * 0.35, -hz * 0.72);
+    body.frame('tail', hx * 1.5, hy * 0.5, hz * 0.55, 0.05, mats.dark, 0, hy * 0.35, -hz * 0.72);
     const rimW = new THREE.Mesh(new THREE.TorusGeometry(spec.wheelRadius * 0.62, spec.wheelRadius * 0.26, 8, 16), mats.rubber);
     body.add(rimW.geometry, mats.rubber, 0, hy * 1.05, -hz * 0.74, Math.PI / 2 - 0.15, 0, 0);
     body.cyl(0.1, 0.1, 0.06, mats.metal, 0, hy * 1.12, -hz * 0.74, -0.15, 0, 0, 10);
@@ -280,18 +342,32 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     body.box(hx * 0.3, 0.1, 0.04, 0.02, mats.taillight, -hx * 0.75, hy * 0.2, -hz * 0.96);
   }
 
+  return body;
+}
+
+export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorOverride?: number): CarModel {
+  const color = colorOverride ?? spec.color;
+  const mats = makeMaterials(spec, color);
+  const { x: hx, y: hy, z: hz } = spec.half;
+  const wheelY = wheelRestY(spec);
+  const rescue = variant === 'rescue';
+  const body = buildBody(spec, mats, variant);
+
   const group = new THREE.Group();
-  group.add(body.build());
+  const bodyGroup = body.build();
+  group.add(bodyGroup);
 
   // Number badges on both doors.
   const tag = rescue ? '?' : ({ scout: '1', hauler: '2', relay: '3' } as Record<string, string>)[spec.role] ?? '';
   const badgeBg = rescue ? '#ffffff' : spec.role === 'hauler' ? '#f5c542' : '#ffffff';
+  const badges: THREE.Mesh[] = [];
   for (const s of [1, -1]) {
     const b = badge(tag, badgeBg, '#2c2e35');
     b.position.set(s * (hx * 0.99 + 0.008), hy * (spec.role === 'hauler' ? 0.1 : 0.15), hz * 0.15);
     b.rotation.y = s * Math.PI / 2;
     b.scale.setScalar(spec.role === 'hauler' ? 1.15 : 0.95);
     group.add(b);
+    badges.push(b);
   }
 
   let battery: THREE.Object3D | null = null;
@@ -339,5 +415,5 @@ export function buildCar(spec: CarSpec, variant: CarVariant = 'standard', colorO
     return { mesh, anchor: new THREE.Vector3(Math.sign(cx) * hx * 0.55, -hy * 0.75, cz * 0.92) };
   });
 
-  return { group, wheels, arms, materials: mats, battery };
+  return { group, bodyGroup, badges, parts: body.parts(), wheels, arms, materials: mats, battery };
 }

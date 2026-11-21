@@ -4,6 +4,13 @@
  * 0.25 s: swap, hidden by the flash.
  * 0.25 to 0.75 s: the new car springs up from squashed, overshoots, and settles at normal size.
  */
+/** The five big boxes every car is built around. They morph from one car's shape into the other's. */
+export const FRAME_IDS = ['lower', 'cab', 'hood', 'tail', 'under'] as const;
+export type FrameId = (typeof FRAME_IDS)[number];
+/** Where small details sit. Each region folds away and unfolds as one. */
+export const REGION_IDS = ['top', 'front', 'rear', 'side'] as const;
+export type RegionId = (typeof REGION_IDS)[number];
+
 export const TRANSFORM_DURATION = 0.75;
 export const SWAP_AT = 0.25;
 
