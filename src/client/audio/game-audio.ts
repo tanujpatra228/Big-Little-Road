@@ -600,6 +600,34 @@ export class GameAudio {
     air.stop(t + 0.85);
   }
 
+  /** A springy hop: a quick upward chirp with a soft thump under it. */
+  jump(): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(240, now);
+    o.frequency.exponentialRampToValueAtTime(700, now + 0.11);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    o.connect(g).connect(this.fxBus);
+    o.start(now);
+    o.stop(now + 0.18);
+    const t = ctx.createOscillator();
+    t.type = 'sine';
+    t.frequency.setValueAtTime(120, now);
+    t.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+    const tg = ctx.createGain();
+    tg.gain.setValueAtTime(0.18, now);
+    tg.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    t.connect(tg).connect(this.fxBus);
+    t.start(now);
+    t.stop(now + 0.14);
+  }
+
   /** A short metallic click for hooking or letting go of a rope. */
   hook(): void {
     const ctx = this.ctx;

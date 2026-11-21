@@ -3,6 +3,7 @@ import { approach, clamp, driveCommand, steerAngle, type DriveInput } from '../.
 import type { CarSpec } from '../../shared/cars';
 import { resolveSurface, Surface } from '../../shared/surfaces';
 import { impactFromDelta, type Impact } from '../../shared/audio-model';
+import { JumpState, airLevel, jumpImpulse, jumpSpeed } from '../../shared/jump';
 import type { PhysicsWorld } from './world';
 
 const WHEELS = 4;
@@ -86,6 +87,9 @@ export class Vehicle {
   private velBefore = { x: 0, y: 0, z: 0 };
   private impact: Impact | null = null;
   private pulled = false;
+  private readonly jumpState = new JumpState();
+  /** Set on the step a hop fires; the game reads it once to play the sound. */
+  private hopped = false;
   /** Seconds left of gentle over-speed drag after turning into another car, so momentum carries over. */
   private grace = 0;
 
@@ -195,7 +199,47 @@ export class Vehicle {
     const k = Math.max(0, 1 - drag * dt);
     this.body.setLinvel({ x: v.x * k, y: v.y, z: v.z * k }, true);
 
+    // A hop, then a light push toward level while airborne so it lands on wheels.
+    if (this.jumpState.update(this.grounded, spec.jumpCooldown, dt)) this.hop();
+    else if (this.grounded === 0) this.levelInAir(dt);
+
     this.updateGrounded(dt);
+  }
+
+  /** The jump key was pressed. The hop fires as soon as the car may hop (a short press buffer applies). */
+  requestJump(): void {
+    this.jumpState.request();
+  }
+
+  /** True once after a hop fired, for sound and effects. */
+  consumeHop(): boolean {
+    const h = this.hopped;
+    this.hopped = false;
+    return h;
+  }
+
+  /** Seconds before the next hop is allowed (runs while on the ground). */
+  get jumpCooldownLeft(): number {
+    return this.jumpState.cooldownLeft;
+  }
+
+  private chassisUp(): { x: number; y: number; z: number } {
+    const q = this.body.rotation();
+    return { x: 2 * (q.x * q.y - q.w * q.z), y: 1 - 2 * (q.x * q.x + q.z * q.z), z: 2 * (q.y * q.z + q.w * q.x) };
+  }
+
+  private hop(): void {
+    const v = this.body.linvel();
+    const dv = jumpImpulse(this.chassisUp(), v, jumpSpeed(this.spec.jumpApex, -this.pw.world.gravity.y));
+    this.body.setLinvel({ x: v.x + dv.x, y: v.y + dv.y, z: v.z + dv.z }, true);
+    this.hopped = true;
+  }
+
+  private levelInAir(dt: number): void {
+    const w = this.body.angvel();
+    const a = airLevel(this.chassisUp(), w);
+    if (a.x === 0 && a.z === 0) return;
+    this.body.setAngvel({ x: w.x + a.x * dt, y: w.y, z: w.z + a.z * dt }, true);
   }
 
   /** Signed speed along the chassis nose (+z), from the body, not the wheels. */

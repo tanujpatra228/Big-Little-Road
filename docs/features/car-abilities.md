@@ -1,10 +1,10 @@
 # Car abilities: drift, jump, nitro
 
-Status: planned, not started. Applies to all cars (Scout, Hauler, Relay, and the rescue car once revived). No characters: the cars are the characters (the Scout's driver figure was removed).
+Status: decisions made (defaults accepted). Jump is built and live. Nitro and drift are next, in that order. Applies to all cars (Scout, Hauler, Relay, and the rescue car once revived). No characters: the cars are the characters (the Scout's driver figure was removed).
 
 ## What exists today
 
-- Handbrake (Space): applies brakes and cuts rear friction to 45%. This is a crude slide, not a drift.
+- Handbrake (C, moved off Space when jump arrived): applies brakes and cuts rear friction to 45%. This is a crude slide, not a drift.
 - Per-surface grip, drag and top-speed caps; per-car affinity (`shared/surfaces.ts`, `shared/cars.ts`).
 - Suspension bump stops (`maxWheelRise`), brakes tuned so cars do not flip, impact detection, brake lights, tyre squeal on braking.
 - Tuning panel (`?tune`) and a flat-world speed harness for measuring behaviour in tests.
@@ -59,12 +59,12 @@ Goal: a short, exciting burst with a cost.
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
-| Drift / handbrake | Space (unchanged) | X |
+| Drift / handbrake | C | X |
 | Nitro | Shift (hold) | RB or LB |
-| Jump | E | A |
+| Jump | Space (tap) | A |
 | Horn | H (unchanged) | D-pad up |
 
-Open question: if you would rather have Space as jump (the most common convention), handbrake moves to Shift or C. Bindings will live in one table, so this is a one-line change.
+Decided: Space jumps, C is the handbrake and later the drift key, Shift is nitro. Bindings live in `client/game/input.ts`.
 
 ## Order of work
 
@@ -83,7 +83,23 @@ Open question: if you would rather have Space as jump (the most common conventio
 - Drift feel is the hardest to get right and needs real hands. Plan on iteration.
 - Audio and effects depend on art milestone G4 (particles) and the audio doc's open items.
 
-## Open questions for the owner
+## Decisions (taken with the defaults)
+
+1. Space jumps; the handbrake moved to C.
+2. Nitro: personal tank for now; shared battery in missions comes with Phase 3.
+3. Jump: tap only. Hold-to-charge can come later for the Hauler if puzzles need it.
+4. Drift: no score for now, only the nitro charge later.
+
+## Jump: as built
+
+- Pure rules in `shared/jump.ts` (`JumpState`, `jumpSpeed`, `jumpImpulse`, `airLevel`), applied in `Vehicle.step`. Press Space: fires when at least 3 wheels touch the ground (0.15 s coyote time after an edge, 0.12 s press buffer before landing), no air hops, and a cooldown that only runs on the ground after landing.
+- Apex per car (`jumpApex`, `jumpCooldown` in `CarSpec`): Scout 0.55 m / 0.8 s, Hauler 0.35 m / 1.2 s, Relay 0.5 m / 1.2 s. Measured in physics tests: standing and at full speed the hop rises to the tuned height, and the car lands upright on flat ground.
+- The vertical launch speed is the same on any slope; the chassis up vector only tilts it a little so it pops forward on a slope. In the air a light levelling torque helps the car land on its wheels. It gives up past 90 degrees, so real flips still happen.
+- **Lesson that changed the numbers:** the first tuning (0.9 / 0.5 / 0.95 m) let the Scout hop over a 1.2 m wall. What matters is not the apex but apex plus the belly clearance (about 0.35 m). The rule is now measured directly: `tests/jump.test.ts` drives every car at a 1.1 m block at approach speeds 4, 7 and 12 m/s with seven hop timings, and none gets over. `tests/platform.test.ts` does the same against the Terrace wall from four sides. What a hop does add: Relay goes from 0.5 m driveable to about 1.0 m, Scout from 0.7 to 0.9, and rubble (under 0.3 m) is trivial.
+- Network: nothing new. A hop is local physics; other players see it in the pose stream (10 Hz, so a 0.6 s hop is sampled about six times and smoothed). Sound is a local spring chirp.
+- Not done: a dust puff on takeoff and landing (waits for art milestone G4 particles), a cooldown hint in the HUD.
+
+## Open questions for the owner (answered above)
 
 1. Controls: keep Space as handbrake and put jump on E, or Space as jump?
 2. Nitro source: personal tank in Free Roam and Race, shared battery in missions. OK?

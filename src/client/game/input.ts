@@ -32,11 +32,22 @@ export class InputDevices {
     return null;
   }
 
+  private padJump = false;
+
+  /** True once per press of the jump key (Space) or gamepad A. Call once per frame. */
+  jumpPressed(): boolean {
+    let fired = this.wasPressed('Space');
+    const down = this.pad()?.buttons[0]?.pressed ?? false;
+    if (down && !this.padJump) fired = true;
+    this.padJump = down;
+    return fired;
+  }
+
   read(dt: number): DriveInput {
     const k = (...codes: string[]): boolean => codes.some((c) => this.keys.has(c));
     let throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
     let steerTarget = (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0);
-    let handbrake = k('Space');
+    let handbrake = k('KeyC');
 
     const pad = this.pad();
     if (pad) {
@@ -48,7 +59,7 @@ export class InputDevices {
         this.steerSmooth = ax;
         steerTarget = ax;
       }
-      handbrake = handbrake || (pad.buttons[0]?.pressed ?? false);
+      handbrake = handbrake || (pad.buttons[2]?.pressed ?? false);
     }
 
     const padSteering = pad !== null && deadzone(pad.axes[0] ?? 0) !== 0;

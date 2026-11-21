@@ -35,6 +35,10 @@ export interface CarSpec {
   surfaces: SurfaceAffinity;
   /** Top-speed fraction per surface. This is the main "how much does this terrain slow me" knob. */
   surfaceSpeed: SurfaceSpeed;
+  /** Hop height on flat ground, metres. Never above MAX_JUMP_APEX (tested). */
+  jumpApex: number;
+  /** Seconds after landing before the next hop. */
+  jumpCooldown: number;
 }
 
 export const CARS: Record<CarRole, CarSpec> = {
@@ -79,6 +83,8 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Gravel]: 0.9,
       [Surface.Water]: 1,
     },
+    jumpApex: 0.55,
+    jumpCooldown: 0.8,
   },
   hauler: {
     role: 'hauler',
@@ -120,6 +126,8 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Gravel]: 0.6,
       [Surface.Water]: 1,
     },
+    jumpApex: 0.35,
+    jumpCooldown: 1.2,
   },
   relay: {
     role: 'relay',
@@ -159,6 +167,8 @@ export const CARS: Record<CarRole, CarSpec> = {
       [Surface.Gravel]: 0.65,
       [Surface.Water]: 1,
     },
+    jumpApex: 0.5,
+    jumpCooldown: 1.2,
   },
 };
 

@@ -291,6 +291,7 @@ async function boot(): Promise<void> {
     fireworks.update(frame);
     hud.setPrompt(tether.prompt);
 
+    if (input.jumpPressed()) vehicle.requestJump();
     let steps = 0;
     while (acc >= FIXED_DT && steps < 5) {
       vehicle.pushPlanar(rope.x, rope.z, FIXED_DT);
@@ -311,6 +312,7 @@ async function boot(): Promise<void> {
       audioPanel.sync();
     }
     audio.horn(input.isDown('KeyH'));
+    if (vehicle.consumeHop()) audio.jump();
     const hit = vehicle.consumeImpact();
     if (hit) audio.impact(hit, vehicle.surface);
     audio.update(

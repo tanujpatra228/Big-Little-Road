@@ -84,12 +84,18 @@ describe('physics: no way up without the plank, an easy way with it', () => {
   };
 
   /** Drive from `from` toward the platform centre at full throttle. Returns whether it ended up on top, and whether it was ever on top. */
-  const run = (role: CarRole, pw: PhysicsWorld, angle: number, startR: number, seconds: number): { onTop: boolean; everOnTop: boolean } => {
+  const run = (role: CarRole, pw: PhysicsWorld, angle: number, startR: number, seconds: number, hopLead?: number): { onTop: boolean; everOnTop: boolean } => {
     const from = at(angle, startR);
     const yaw = Math.atan2(PLATFORM.x - from.x, PLATFORM.z - from.z);
     const v = new Vehicle(pw, CARS[role], from.x, from.z, yaw);
     let ever = false;
+    let hopped = false;
     for (let i = 0; i < seconds / FIXED_DT; i++) {
+      const here = v.body.translation();
+      if (hopLead !== undefined && !hopped && v.grounded >= 3 && dist(here.x, here.z) < PLATFORM_WALL.face + CARS[role].half.z + hopLead) {
+        v.requestJump();
+        hopped = true;
+      }
       v.step({ throttle: i < 30 ? 0 : 1, steer: 0, handbrake: false }, FIXED_DT);
       pw.world.step();
       v.afterPhysics();
@@ -104,6 +110,14 @@ describe('physics: no way up without the plank, an easy way with it', () => {
     for (const angle of [0, 0.8, 1.6, 2.4, 3.2, 4.0, 4.8, 5.6]) {
       const r = run(role, world(null), angle, 15, 9);
       expect(r.everOnTop).toBe(false);
+    }
+  });
+
+  it.each(CAR_ORDER)('%s cannot hop its way up the wall either, at any timing', (role) => {
+    for (const angle of [0, 1.6, 3.2, 4.8]) {
+      for (const lead of [0.5, 1.5, 2.5, 4]) {
+        expect(run(role, world(null), angle, 15, 9, lead).everOnTop).toBe(false);
+      }
     }
   });
 
