@@ -26,6 +26,7 @@ export interface CarSpec {
   enginePower: number;
   topSpeed: number;
   reverseTopSpeed: number;
+  /** Total brake force. Tyre grip is high, so too much pitches the car over: keep stops above 1 s. */
   brakeForce: number;
   maxSteer: number; // radians
   /** Speed at which steering authority has halved. */
@@ -58,7 +59,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     enginePower: 62,
     topSpeed: 24,
     reverseTopSpeed: 8,
-    brakeForce: 9,
+    brakeForce: 1.8,
     maxSteer: 0.52,
     steerFalloffSpeed: 14,
     angularDamping: 1.2,
@@ -100,7 +101,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     enginePower: 190,
     topSpeed: 12,
     reverseTopSpeed: 6,
-    brakeForce: 22,
+    brakeForce: 3.3,
     maxSteer: 0.45,
     steerFalloffSpeed: 9,
     angularDamping: 2.0,
@@ -141,7 +142,7 @@ export const CARS: Record<CarRole, CarSpec> = {
     enginePower: 120,
     topSpeed: 20,
     reverseTopSpeed: 7,
-    brakeForce: 14,
+    brakeForce: 2.4,
     maxSteer: 0.48,
     steerFalloffSpeed: 12,
     angularDamping: 1.6,

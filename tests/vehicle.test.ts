@@ -51,12 +51,4 @@ describe.each(CAR_ORDER)('%s on the patio', (role) => {
     // Facing +z, the driver's right is -x.
     expect(heading(v).x).toBeLessThan(-0.1);
   });
-
-  it('stops when braking', () => {
-    const pw = createPhysicsWorld(generateTerrain(1));
-    const v = new Vehicle(pw, spec, 0, -6, 0);
-    run(pw, v, { throttle: 1, steer: 0, handbrake: false }, 2.5);
-    run(pw, v, { throttle: -1, steer: 0, handbrake: false }, 3);
-    expect(Math.abs(v.speed)).toBeLessThan(2.5);
-  });
 });

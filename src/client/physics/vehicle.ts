@@ -51,8 +51,18 @@ export class Vehicle {
         .setCcdEnabled(true),
     );
     const { half: h } = spec;
+    // Chassis with an angled underbody at the nose and tail (approach and departure angles),
+    // so it rides up onto things instead of snagging, and slides off when it does land on one.
+    const ch = h.z * 0.45;
+    const cs = 0.08;
+    const hull = R.ColliderDesc.convexHull(
+      new Float32Array([
+        h.x, h.y, h.z, -h.x, h.y, h.z, h.x, h.y, -h.z, -h.x, h.y, -h.z,
+        h.x - cs, -h.y, h.z - ch, -(h.x - cs), -h.y, h.z - ch, h.x - cs, -h.y, -(h.z - ch), -(h.x - cs), -h.y, -(h.z - ch),
+      ]),
+    );
     const collider = pw.world.createCollider(
-      R.ColliderDesc.cuboid(h.x, h.y, h.z).setFriction(0.4).setRestitution(0.05),
+      (hull ?? R.ColliderDesc.cuboid(h.x, h.y, h.z)).setFriction(0.3).setRestitution(0.05),
       this.body,
     );
     // Mass and inertia from a box, with the centre of mass dropped for stability.

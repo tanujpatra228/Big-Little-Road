@@ -42,10 +42,13 @@ export function createPhysicsWorld(terrain: Terrain, boulders: readonly Boulder[
     { x: terrain.size, y: 1, z: terrain.size },
   ).setFriction(1);
   world.createCollider(desc);
+  // Slick on purpose: a car that lands belly-first on a rock should slide off, not stick.
   for (const b of boulders) {
-    world.createCollider(
-      RAPIER.ColliderDesc.ball(b.radius).setTranslation(b.x, b.y, b.z).setFriction(0.9).setRestitution(0.35),
-    );
+    for (const p of b.parts) {
+      world.createCollider(
+        RAPIER.ColliderDesc.ball(p.r).setTranslation(p.x, p.y, p.z).setFriction(0.2).setRestitution(0.3),
+      );
+    }
   }
   return { rapier: RAPIER, world, terrain };
 }

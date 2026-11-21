@@ -106,20 +106,24 @@ function buildScatter(terrain: Terrain): THREE.Group {
   return group;
 }
 
-/** Visual boulders. Same list the physics uses, so what you see is what you hit. */
+/** Visual boulders. One mesh per jointed sphere, from the same list the physics uses. */
 export function buildBoulderMesh(boulders: readonly Boulder[]): THREE.InstancedMesh {
+  const parts = boulders.flatMap((b) => b.parts.map((p) => ({ p, kind: b.kind })));
   const mesh = new THREE.InstancedMesh(
     new THREE.IcosahedronGeometry(1, 1),
-    new THREE.MeshStandardMaterial({ color: 0x80848b, flatShading: true, roughness: 1 }),
-    boulders.length,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }),
+    parts.length,
   );
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
-  boulders.forEach((b, i) => {
-    // Slightly under the collider radius so the mesh never floats above what you hit.
-    m.compose(new THREE.Vector3(b.x, b.y, b.z), q.setFromEuler(e.set(b.rx, b.ry, b.rz)), new THREE.Vector3(b.radius, b.radius * 0.92, b.radius));
+  const c = new THREE.Color();
+  parts.forEach(({ p, kind }, i) => {
+    // A touch under the collider radius so the mesh never floats above what you hit.
+    m.compose(new THREE.Vector3(p.x, p.y, p.z), q.setFromEuler(e.set(p.rx, p.ry, p.rz)), new THREE.Vector3(p.r * 0.97, p.r * 0.9, p.r * 0.97));
     mesh.setMatrixAt(i, m);
+    const tone = 0.45 + ((p.rx * 7.3 + p.rz * 3.1) % 1) * 0.14;
+    mesh.setColorAt(i, c.setRGB(tone, tone * 1.01, tone * (kind === 'rubble' ? 0.94 : 1.04)));
   });
   mesh.castShadow = true;
   mesh.receiveShadow = true;

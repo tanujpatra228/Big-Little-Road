@@ -71,9 +71,9 @@ export function driveCommand(
     if (movingForward) brake = brakeForce * -t;
     else engine = -power * 0.7 * -t * taper(-forwardSpeed / reverseTopSpeed);
   } else {
-    brake = brakeForce * 0.08; // light engine braking
+    brake = brakeForce * 0.4; // light engine braking
   }
-  if (input.handbrake) brake = Math.max(brake, brakeForce * 1.4);
+  if (input.handbrake) brake = Math.max(brake, brakeForce); // slide comes from rear grip loss, not extra braking
 
   return { engine: (engine * traction) / wheels, brake: brake / wheels };
 }

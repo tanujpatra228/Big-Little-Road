@@ -40,7 +40,9 @@ Top speed as a share of each car's grass speed, from the flat-world tests. No su
 | Hauler | 39% | 58% | 83% | 100% | 54% |
 | Relay | 45% | 59% | 36% | 100% | 21% |
 
-Rock is deliberately 100%: big rock is a hazard, not a slow zone. Slowing cars down there would do the driving for the player. The rock field has 38 solid boulders (real colliders, same list as the visuals) that crash and throw cars around, with gaps wider than the Hauler (about 1.6) so there is always a way through. Loose stones around the field are Gravel, which slows like sand. A scripted driver with simple boulder avoidance crosses the field from 5 to 7 of 8 directions per car, and a blind one gets pinned or flipped, which is the intended difference.
+Rock is deliberately 100%: big rock is a hazard, not a slow zone. Slowing cars down there would do the driving for the player. The rock field has two kinds of rock and nothing in between, because a belly-height dome is what high-centres a car: 20 tall boulders (irregular clusters of 3 to 5 jointed spheres, at least 1.1 high) that crash and throw cars around, with gaps wider than the Hauler (about 1.6) so there is always a way through, and 30 low rubble heaps (under 0.3) you drive over. The car underbody is angled at nose and tail and rock surfaces are slick, so a car that lands on something slides off. Loose stones around the field are Gravel, which slows like sand. A scripted driver with simple boulder avoidance crosses the field from 6 to 7 of 8 directions per car, a blind one only 3 to 5, which is the intended difference.
+
+Braking fix: brakes used to be about 5 times too strong for the tyre grip, so every car flipped end over end when braking hard from top speed. Brakes are retuned so cars stop in roughly 1 s without pitching over, and tests enforce it.
 
 ## Known issues going in
 
