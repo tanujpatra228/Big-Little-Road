@@ -1,0 +1,9 @@
+name = "big-little-road"
+main = "src/worker/index.ts"
+compatibility_date = "2025-01-01"
+
+# Game files are static assets; the Worker runs only for /api/*.
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]

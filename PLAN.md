@@ -1,6 +1,6 @@
 # Implementation Plan: Co-op RC Car Browser Game
 
-Source: "Co-op RC Car Browser Game: Design Proposal" (Claude Docs). Working title in this repo: Big Little Road. The doc's top pick is Underfoot; decide the name before any public asset ships.
+Source: "Co-op RC Car Browser Game: Design Proposal" (Claude Docs). Name: Big Little Road (decided; the doc's top pick, Underfoot, is dropped). Check the domain and store conflicts before any public asset ships.
 
 ## 0. Read this first
 
@@ -129,6 +129,6 @@ Do not cut: ping wheel, shared battery, signal web, join-in-10-seconds flow. The
 ## 7. Next actions
 
 1. Attach `propwash-fpv` to this session (or confirm it is not available).
-2. Pick the name (Underfoot vs Big Little Road) and check the domain.
-3. Scaffold Phase 0 and deploy it.
+2. Check the Big Little Road domain and trademark conflicts.
+3. Phase 0 scaffold is in the repo; deploy it with `npm run deploy` once Wrangler is logged in.
 4. Start Phase 1 and book the first outside playtest for end of week 1.
