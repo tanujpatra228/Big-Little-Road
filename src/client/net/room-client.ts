@@ -14,6 +14,7 @@ export interface RoomHandlers {
   car(id: string, role: CarRole): void;
   horn(id: string, on: boolean): void;
   nitro(id: string, on: boolean): void;
+  /** Position in metres (the wire carries centimetres). */
   ping(id: string, kind: PingKind, x: number, z: number): void;
   prop(p: PropInfo): void;
   goal(id: string, by: string): void;
@@ -184,7 +185,7 @@ export class RoomClient {
         this.h.nitro(msg.id, msg.on);
         break;
       case 'ping':
-        this.h.ping(msg.id, msg.kind, msg.x, msg.z);
+        this.h.ping(msg.id, msg.kind, msg.x / 100, msg.z / 100); // the wire carries whole centimetres
         break;
       case 'prop':
         this.h.prop(msg.prop);

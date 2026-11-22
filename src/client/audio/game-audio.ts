@@ -627,6 +627,41 @@ export class GameAudio {
     air.stop(t + 0.85);
   }
 
+  /** A short two- or three-note chirp for a teammate's ping, a different tune for each kind. */
+  ping(kind: 'go' | 'wait' | 'tow' | 'battery' | 'look', gain = 1, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || gain < 0.01) return;
+    const now = ctx.currentTime;
+    const tunes: Record<string, number[]> = {
+      go: [660, 880],
+      wait: [520, 520],
+      tow: [440, 440, 440],
+      battery: [660, 440],
+      look: [988],
+    };
+    let out: AudioNode = this.fxBus;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      p.connect(this.fxBus);
+      out = p;
+      window.setTimeout(() => p.disconnect(), 1200);
+    }
+    (tunes[kind] ?? [660]).forEach((hz, i) => {
+      const t = now + i * 0.11;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(hz, t);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16 * gain, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.2);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.22);
+    });
+  }
+
   /** The nitro kicking in: a rising rush of air. Others' boosts are quieter and panned. */
   whoosh(gain = 1, pan = 0): void {
     const ctx = this.ctx;

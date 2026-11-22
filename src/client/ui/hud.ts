@@ -58,7 +58,7 @@ export class Hud {
     this.nitroBar.append(this.nitroFill);
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;

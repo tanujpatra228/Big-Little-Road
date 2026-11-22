@@ -19,6 +19,7 @@ import { CoopPanel, type PanelPlayer } from './ui/coop-panel';
 import { RoomClient } from './net/room-client';
 import { RemoteCar } from './net/remote-car';
 import { TetherController } from './game/tether-controller';
+import { PingController } from './game/pings';
 import { buildTerrace } from './render/terrace';
 import { Fireworks } from './render/fireworks';
 import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
@@ -174,6 +175,7 @@ async function boot(): Promise<void> {
         refreshPanel();
       },
       leave(id) {
+        pings.onLeave(id);
         remotes.get(id)?.dispose();
         remotes.delete(id);
         roster.delete(id);
@@ -216,7 +218,9 @@ async function boot(): Promise<void> {
       goal(id, by) {
         celebrate(id, by === net.selfId ? 'You made it up.' : `${roster.get(by)?.name ?? 'A teammate'} made it up.`);
       },
-      ping() {},
+      ping(id, kind, x, z) {
+        pings.onRemote(id, kind, x, z, performance.now());
+      },
       status() {
         if (net.status === 'off') {
           tether.onOffline();
@@ -240,6 +244,19 @@ async function boot(): Promise<void> {
   };
   const goalFiredAt = new Map<string, number>();
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
+  const pings = new PingController({
+    scene,
+    camera,
+    terrain,
+    net: () => net,
+    selfId: () => (net.status === 'on' ? net.selfId : 'me'),
+    vehicle: () => vehicle,
+    remotes: () => remotes,
+    nameOf: (id) => roster.get(id)?.name ?? 'Player',
+    audio,
+    isDown: (c) => input.isDown(c),
+    wasPressed: (c) => input.wasPressed(c),
+  });
   const panel: CoopPanel = new CoopPanel({
     async start() {
       try {
@@ -273,6 +290,7 @@ async function boot(): Promise<void> {
     celebrate,
     remotes,
     get tether() { return tether; },
+    pings,
     camera,
     get orbit() { return orbit; },
     spawn,
@@ -307,6 +325,7 @@ async function boot(): Promise<void> {
     if (input.wasPressed('KeyF')) tether.toggle();
     if (input.wasPressed('KeyT')) tether.requestReset();
     const rope = tether.update();
+    pings.update(performance.now(), frame);
     // Reached a goal? Online the room announces it to everyone; alone we celebrate straight away.
     const here = vehicle.body.translation();
     for (const g of GOALS) {

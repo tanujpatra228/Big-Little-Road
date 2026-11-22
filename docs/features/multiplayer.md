@@ -1,6 +1,6 @@
 # Multiplayer (Phase 2, first slice)
 
-Status: rooms, join by link, remote cars, car sync, horn, solid cars (bumper-car collisions), the plank with rope carrying, a simulated-lag switch. The plank is rigid at its limit. Not yet: the real 150 ms playtest of carrying the plank (the week-4 gate), ping wheel UI, positional engine sounds for other players, momentum transfer between cars.
+Status: rooms, join by link, remote cars, car sync, horn, solid cars (bumper-car collisions), the plank with rope carrying, a simulated-lag switch. The plank is rigid at its limit. Not yet: the real 150 ms playtest of carrying the plank (the week-4 gate), (ping wheel is built, see ping-wheel.md), positional engine sounds for other players, momentum transfer between cars.
 
 Modelled on the Prop Wash design: one Durable Object per room, a pure rules module, validated JSON frames, 10 Hz poses drawn about 100 ms in the past, a per-tab key to reclaim a slot.
 

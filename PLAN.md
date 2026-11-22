@@ -68,7 +68,7 @@ Build in this order, each as pure logic in `shared/` first, then wired in:
 2. Signal web: range from base and Relay beacons, lag, then failsafe stop. Computed locally from teammate poses.
 3. Winch with anchors (roots, stakes, teammates), car trains.
 4. Rescue not reset: flipped car waits for a nudge, solo reset after 10 s.
-5. Ping wheel: go here, wait, tow me, low battery, look; plus horn emote.
+5. Ping wheel: go here, wait, tow me, low battery, look; plus horn emote. Status: built and live (`docs/features/ping-wheel.md`); gamepad and the horn emote remain.
 6. Split vision: Scout UV marks visible only to the Scout.
 7. Low range gear for Hauler and Relay; crew toolbox (6 slots).
 - Gate: a throwaway test mission using three of these needs all 3 players, and a solo brute force attempt fails.
