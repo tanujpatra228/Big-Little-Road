@@ -228,3 +228,68 @@ describe('the team battery in the room', () => {
     expect(batteryMsgs(rb, 'c2')[0]!.battery.level).toBe(400);
   });
 });
+
+describe('the room rule for radio range (signal)', () => {
+  const rulesMsgs = (r: Result, conn: string): Array<Extract<ServerMsg, { type: 'rules' }>> =>
+    to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'rules' }> => m.type === 'rules');
+  const two = (): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb'), 0);
+    return room;
+  };
+
+  it('starts off, and the welcome says so', () => {
+    const room = new RoomLogic('ABCD');
+    const r = room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    const w = to(r, 'c1').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.rules).toEqual({ signal: false });
+  });
+
+  it('anyone can switch it on, and everyone is told, the one who switched it included, with who did it', () => {
+    const room = two();
+    const r = room.message('c1', { type: 'rules', signal: true }, 100);
+    expect(rulesMsgs(r, 'c1')).toEqual([{ type: 'rules', signal: true, by: 'p1' }]);
+    expect(rulesMsgs(r, 'c2')).toEqual([{ type: 'rules', signal: true, by: 'p1' }]);
+    expect(room.rules.signal).toBe(true);
+  });
+
+  it('switching it to what it already is says nothing', () => {
+    const room = two();
+    expect(room.message('c1', { type: 'rules', signal: false }, 100).out).toHaveLength(0);
+    room.message('c1', { type: 'rules', signal: true }, 200);
+    expect(room.message('c2', { type: 'rules', signal: true }, 300).out).toHaveLength(0);
+  });
+
+  it('a late joiner is told it is on, and the other player can switch it off again', () => {
+    const room = two();
+    room.message('c1', { type: 'rules', signal: true }, 100);
+    const r = room.hello('c3', hello('Cy', 'key-cccccccc'), 500);
+    const w = to(r, 'c3').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.rules).toEqual({ signal: true });
+    const off = room.message('c2', { type: 'rules', signal: false }, 600);
+    expect(rulesMsgs(off, 'c3')[0]).toMatchObject({ signal: false, by: 'p2' });
+  });
+});
+
+describe('the room rules survive a hibernation', () => {
+  it('a room that slept and woke still has radio range on, and a switch-off is not ignored', () => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb'), 0);
+    room.message('c1', { type: 'rules', signal: true }, 100);
+    // Everyone sits still, the room is evicted, then it wakes from storage.
+    const woke = RoomLogic.restore('ABCD', room.save(), ['c1', 'c2'], 20000, room.saveProps(), room.saveRules());
+    expect(woke.rules.signal).toBe(true);
+    const off = woke.message('c2', { type: 'rules', signal: false }, 20100);
+    expect(off.out).toHaveLength(1);
+    expect(woke.rules.signal).toBe(false);
+    const late = woke.hello('c3', hello('Cy', 'key-cccccccc'), 20200);
+    const w = to(late, 'c3').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.rules).toEqual({ signal: false });
+  });
+
+  it('restoring with no saved rules starts them off', () => {
+    expect(RoomLogic.restore('ABCD', [], [], 0).rules.signal).toBe(false);
+  });
+});

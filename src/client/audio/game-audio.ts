@@ -627,6 +627,27 @@ export class GameAudio {
     air.stop(t + 0.85);
   }
 
+  /** The radio link dropping (two falling tones) or coming back (two rising ones). */
+  signal(kind: 'lost' | 'back'): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+    const notes = kind === 'lost' ? [520, 330] : [380, 640];
+    notes.forEach((hz, i) => {
+      const t = now + i * 0.13;
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(hz, t);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.16);
+      o.connect(g).connect(this.fxBus);
+      o.start(t);
+      o.stop(t + 0.18);
+    });
+  }
+
   /** A short two- or three-note chirp for a teammate's ping, a different tune for each kind. */
   ping(kind: 'go' | 'wait' | 'tow' | 'battery' | 'look', gain = 1, pan = 0): void {
     const ctx = this.ctx;

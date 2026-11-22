@@ -15,6 +15,9 @@ export class Hud {
   private readonly nitroBar = document.createElement('div');
   private readonly nitroFill = document.createElement('i');
   private readonly nitroLabel = document.createElement('div');
+  private readonly signalBox = document.createElement('div');
+  private readonly signalBars: HTMLElement[] = [];
+  private readonly signalText = document.createElement('span');
   private toastTimer = 0;
   private audioState = '';
   private frames = 0;
@@ -42,6 +45,14 @@ export class Hud {
       .hud .nitro.low i{background:#e0412f}
       .hud .nitro.team i{background:linear-gradient(90deg,#2bb3ff,#7ef0d8)}
       .hud .nitro.team.run i{background:linear-gradient(90deg,#7ef0d8,#e6fff8)}
+      .hud .signal{position:absolute;left:20px;bottom:166px;display:none;align-items:flex-end;gap:8px;font-size:11px;font-weight:600;letter-spacing:.04em}
+      .hud .signal .bars{display:flex;align-items:flex-end;gap:2px;height:18px}
+      .hud .signal .bars i{display:block;width:5px;border-radius:1px;background:#fff3}
+      .hud .signal .bars i.on{background:var(--sc,#6dff9e)}
+      .hud .signal.weak{--sc:#ffc247}
+      .hud .signal.lost{--sc:#ff5a4d}
+      .hud .signal.lost .txt{animation:sigblink .8s steps(2) infinite}
+      @keyframes sigblink{50%{opacity:.35}}
       .hud .nitrolabel{position:absolute;left:20px;bottom:142px;font-size:11px;font-weight:600;letter-spacing:.04em;opacity:.9;display:none}
       .hud .nitro.run i{background:linear-gradient(90deg,#ffd23f,#fff3b0)}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
@@ -61,6 +72,17 @@ export class Hud {
     this.nitroBar.title = 'Nitro (Shift)';
     this.nitroBar.append(this.nitroFill);
     this.nitroLabel.className = 'nitrolabel';
+    this.signalBox.className = 'signal';
+    const bars = document.createElement('span');
+    bars.className = 'bars';
+    [7, 11, 15, 19].forEach((h) => {
+      const b = document.createElement('i');
+      b.style.height = `${h}px`;
+      bars.appendChild(b);
+      this.signalBars.push(b);
+    });
+    this.signalText.className = 'txt';
+    this.signalBox.append(bars, this.signalText);
     const help = document.createElement('div');
     help.className = 'help';
     help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
@@ -71,7 +93,7 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel, this.signalBox);
     document.body.appendChild(this.root);
   }
 
@@ -104,6 +126,21 @@ export class Hud {
     this.nitroBar.title = team ? 'Team battery, shared by everyone in the room (Shift to boost)' : 'Nitro (Shift)';
     this.nitroLabel.style.display = team ? 'block' : 'none';
     if (team) this.nitroLabel.textContent = boosters > 0 ? `TEAM BATTERY · ${boosters} boosting` : 'TEAM BATTERY';
+  }
+
+  /**
+   * The radio link, shown only while the room's radio range is on (pass null otherwise). Four bars for
+   * strength, green when good, amber when the controls lag, red and blinking when cut off.
+   */
+  setSignal(s: { strength: number; quality: 'good' | 'weak' | 'lost'; lag: number } | null): void {
+    this.signalBox.style.display = s ? 'flex' : 'none';
+    if (!s) return;
+    this.signalBox.classList.toggle('weak', s.quality === 'weak');
+    this.signalBox.classList.toggle('lost', s.quality === 'lost');
+    const filled = s.quality === 'lost' ? 0 : Math.max(1, Math.ceil(s.strength * 4 - 1e-9));
+    this.signalBars.forEach((b, i) => b.classList.toggle('on', i < filled));
+    this.signalText.textContent =
+      s.quality === 'lost' ? 'NO SIGNAL: throttle cut. Reverse out, or bring a Relay closer' : s.quality === 'weak' ? `SIGNAL WEAK: controls lag ${Math.round(s.lag * 1000)} ms` : 'SIGNAL';
   }
 
   /** Shows a hint until the browser lets audio start, and a note when muted. */

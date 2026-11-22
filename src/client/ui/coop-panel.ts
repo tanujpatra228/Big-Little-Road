@@ -16,6 +16,8 @@ export interface PanelState {
   players: PanelPlayer[];
   /** Simulated one-way delay in ms (?lag=), shown so nobody mistakes it for their real connection. */
   lag?: number;
+  /** Radio range (signal web) is on. */
+  signal?: boolean;
 }
 
 const NAME_KEY = 'blr-name';
@@ -36,7 +38,7 @@ export class CoopPanel {
   private nameValue = defaultName();
   private rttEl: HTMLElement | null = null;
 
-  constructor(private readonly actions: { start(): void; leave(): void }) {
+  constructor(private readonly actions: { start(): void; leave(): void; setSignal(on: boolean): void }) {
     const css = document.createElement('style');
     css.textContent = `
       .coop{position:fixed;top:36px;right:14px;width:230px;font:13px/1.4 system-ui,sans-serif;color:#fff;background:#10151cb8;border:1px solid #ffffff22;border-radius:12px;padding:10px 12px;text-shadow:none;backdrop-filter:blur(6px)}
@@ -50,6 +52,8 @@ export class CoopPanel {
       .coop .dot{width:10px;height:10px;border-radius:50%}
       .coop .rtt{margin-left:auto;opacity:.7;font-size:12px}
       .coop .note{opacity:.75;font-size:12px}
+      .coop label.rule{display:flex;align-items:center;gap:8px;margin:8px 0 2px;cursor:pointer}
+      .coop label.rule input{width:auto;margin:0}
     `;
     document.head.appendChild(css);
     this.root.className = 'coop';
@@ -76,6 +80,21 @@ export class CoopPanel {
     if (this.rttEl) this.rttEl.textContent = ms ? `${ms} ms` : '';
   }
 
+  /** The radio range switch: shared with everyone in a room, local when playing alone. */
+  private signalRow(s: PanelState): HTMLElement {
+    const label = document.createElement('label');
+    label.className = 'rule';
+    label.title = 'Cars lose control far from the base station unless a Relay truck carries the signal';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!s.signal;
+    box.addEventListener('change', () => this.actions.setSignal(box.checked));
+    const text = document.createElement('span');
+    text.textContent = 'Radio range (needs a Relay)';
+    label.append(box, text);
+    return label;
+  }
+
   render(s: PanelState): void {
     const root = this.root;
     root.replaceChildren();
@@ -98,7 +117,7 @@ export class CoopPanel {
       input.addEventListener('input', () => this.saveName(input.value));
       const start = el('button', 'Start a room');
       start.addEventListener('click', () => this.actions.start());
-      root.append(input, start);
+      root.append(input, start, this.signalRow(s));
       return;
     }
 
@@ -131,7 +150,7 @@ export class CoopPanel {
       li.append(dot, el('span', p.self ? `${p.name} (you)` : p.name), rtt);
       list.append(li);
     }
-    root.append(list, el('div', `${s.players.length} of ${s.max} drivers`, 'note'));
+    root.append(list, el('div', `${s.players.length} of ${s.max} drivers`, 'note'), this.signalRow(s));
     if (s.lag) root.append(el('div', `Simulated lag: ${s.lag} ms each way`, 'note'));
   }
 }

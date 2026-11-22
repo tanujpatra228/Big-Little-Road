@@ -34,6 +34,12 @@ export interface PoseFrame {
   st: number;
 }
 
+/** Rules every player in a room shares. */
+export interface RoomRules {
+  /** Radio range: cars lose control far from the base unless a Relay carries the signal. */
+  signal: boolean;
+}
+
 export interface PlayerInfo {
   id: string;
   name: string;
@@ -47,6 +53,8 @@ export type ClientMsg =
   | { type: 'horn'; on: boolean }
   /** Nitro started or stopped, so others can show the flame. */
   | { type: 'nitro'; on: boolean }
+  /** Turn the room's radio range (signal web) on or off for everyone. */
+  | { type: 'rules'; signal: boolean }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -58,7 +66,7 @@ export type ClientMsg =
   | { type: 'goal'; id: string };
 
 export type ServerMsg =
-  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo }
+  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo; rules?: RoomRules }
   | { type: 'join'; player: PlayerInfo }
   | { type: 'leave'; id: string }
   | ({ type: 'pose'; id: string } & PoseFrame)
@@ -70,6 +78,8 @@ export type ServerMsg =
   | { type: 'goal'; id: string; by: string }
   /** The team battery changed (someone started or stopped boosting). Everyone extrapolates it from here. */
   | { type: 'battery'; battery: BatteryInfo }
+  /** The room's rules changed; `by` is who changed them. */
+  | { type: 'rules'; signal: boolean; by: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -132,6 +142,8 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       return typeof m.on === 'boolean' ? { type: 'horn', on: m.on } : null;
     case 'nitro':
       return typeof m.on === 'boolean' ? { type: 'nitro', on: m.on } : null;
+    case 'rules':
+      return typeof m.signal === 'boolean' ? { type: 'rules', signal: m.signal } : null;
     case 'ping':
       if (!(PING_KINDS as readonly unknown[]).includes(m.kind)) return null;
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;

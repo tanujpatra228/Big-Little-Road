@@ -65,7 +65,7 @@ Status: first slice done (rooms, join by link, smoothed remote cars, car and hor
 ### Phase 3: Co-op systems (weeks 4 to 5)
 Build in this order, each as pure logic in `shared/` first, then wired in:
 1. Shared battery: clients send boost start/stop; room computes drain from its own clock. Status: built and live for nitro (`docs/features/shared-battery.md`); the winch and drift do not use it yet.
-2. Signal web: range from base and Relay beacons, lag, then failsafe stop. Computed locally from teammate poses.
+2. Signal web: range from base and Relay beacons, lag, then failsafe stop. Computed locally from teammate poses. Status: built, behind a room switch (`docs/features/signal-web.md`); no mission turns it on yet.
 3. Winch with anchors (roots, stakes, teammates), car trains.
 4. Rescue not reset: flipped car waits for a nudge, solo reset after 10 s.
 5. Ping wheel: go here, wait, tow me, low battery, look; plus horn emote. Status: built and live (`docs/features/ping-wheel.md`); gamepad and the horn emote remain.

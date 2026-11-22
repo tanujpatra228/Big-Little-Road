@@ -156,6 +156,32 @@ check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
   for (const x of [p, q, late]) try { x.close(); } catch {}
 }
 
+// ---- radio range rule, in a room of its own
+{
+  const rc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(rc, 'Rae'); await p.hello(); await sleep(250);
+  const q = new Client(rc, 'Sol'); await q.hello(); await sleep(250);
+  check('radio range starts off in the welcome', p.of('welcome')[0]?.rules?.signal === false);
+  p.send({ type: 'rules', signal: true }); await sleep(300);
+  check('switching it on tells everyone, including the one who did it', p.of('rules').some((m) => m.signal === true && m.by === 'p1') && q.of('rules').some((m) => m.signal === true && m.by === 'p1'));
+  const n = q.of('rules').length;
+  p.send({ type: 'rules', signal: true }); await sleep(250);
+  check('switching it to what it already is says nothing', q.of('rules').length === n);
+  const late = new Client(rc, 'Tam'); await late.hello(); await sleep(300);
+  check('a late joiner is told radio range is on', late.of('welcome')[0]?.rules?.signal === true);
+  q.send({ type: 'rules', signal: false }); await sleep(300);
+  check('anyone can switch it off again', late.of('rules').some((m) => m.signal === false && m.by === 'p2'));
+
+  // Hibernation: switch it on, let the room sit idle long enough to be evicted (about 10 s), then switch it off.
+  // If the room forgot the rule while it slept, "off" would look like no change and nobody would be told.
+  p.send({ type: 'rules', signal: true }); await sleep(300);
+  const before = q.of('rules').length;
+  await sleep(14000);
+  q.send({ type: 'rules', signal: false }); await sleep(500);
+  check('the rule is remembered after the room has slept', q.of('rules').length > before && q.of('rules').at(-1).signal === false);
+  for (const x of [p, q, late]) try { x.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

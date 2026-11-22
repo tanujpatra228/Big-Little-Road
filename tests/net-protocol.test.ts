@@ -9,6 +9,9 @@ const pose = (over: Partial<PoseFrame> = {}): string =>
 describe('frame validation', () => {
   it('accepts a good pose and a good hello', () => {
     expect(parseClientMessage(pose())).toMatchObject({ type: 'pose', x: 120 });
+    expect(parseClientMessage(JSON.stringify({ type: 'rules', signal: true }))).toEqual({ type: 'rules', signal: true });
+    expect(parseClientMessage(JSON.stringify({ type: 'rules', signal: 'yes' }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'rules' }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'nitro', on: true }))).toEqual({ type: 'nitro', on: true });
     expect(parseClientMessage(JSON.stringify({ type: 'nitro', on: 1 }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'nitro' }))).toBeNull();

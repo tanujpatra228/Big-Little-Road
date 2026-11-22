@@ -38,6 +38,9 @@ export const ROCK: Readonly<Zone> = { x: -46, z: -44, r: 22 };
 const POND: Zone = { x: 42, z: -42, r: 15 };
 const WOODPILE: Zone = { x: 0, z: 56, r: 27 };
 
+/** Centres of the yard's zones, for anything that needs to reason about distances (the signal web, tests). */
+export const ZONES: Readonly<Record<'patio' | 'sand' | 'mud' | 'rock' | 'pond' | 'woodpile', Readonly<Zone>>> = { patio: PATIO, sand: SAND, mud: MUD, rock: ROCK, pond: POND, woodpile: WOODPILE };
+
 /**
  * The terrace: a raised flat platform on a flat apron of lawn. Its wall is taller than anything a car
  * can hop (1.3 m, against tall boulders at 1.1 m), so the only way up is a ramp: the plank, carried

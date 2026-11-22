@@ -1,5 +1,5 @@
 import type { CarRole } from '../cars';
-import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type ServerMsg } from './protocol';
+import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type RoomRules, type ServerMsg } from './protocol';
 import { PropsLogic, toInfo, type PropState } from './props';
 import { GOAL_COOLDOWN_MS, goalById } from '../goals';
 import { SharedBattery, toBatteryInfo } from '../battery';
@@ -50,14 +50,17 @@ export class RoomLogic {
   /** The team battery. Not saved across a hibernation: a room that slept long enough has refilled anyway. */
   readonly battery = new SharedBattery();
   private lastNow = 0;
+  /** Rules the whole room shares. Saved with the room: a room that slept must still remember what everyone agreed. */
+  rules: RoomRules = { signal: false };
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
   constructor(readonly code: string) {}
 
-  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = []): RoomLogic {
+  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = [], rules: RoomRules = { signal: false }): RoomLogic {
     const room = new RoomLogic(code);
     room.props = PropsLogic.restore(props);
+    room.rules = { signal: !!rules.signal };
     const live = new Set(liveConns);
     for (const p of saved) {
       if (!live.has(p.conn)) continue; // their socket died while we slept
@@ -68,6 +71,10 @@ export class RoomLogic {
 
   save(): SavedPlayer[] {
     return [...this.players.values()].map(({ id, name, role, key, conn }) => ({ id, name, role, key, conn }));
+  }
+
+  saveRules(): RoomRules {
+    return { ...this.rules };
   }
 
   saveProps(): PropState[] {
@@ -116,7 +123,7 @@ export class RoomLogic {
 
   private welcomeAndJoin(p: Player, conn: string, now: number): Out[] {
     return [
-      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)) } },
+      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)), rules: { ...this.rules } } },
       { to: { except: conn }, msg: { type: 'join', player: this.info(p) } },
     ];
   }
@@ -160,6 +167,11 @@ export class RoomLogic {
         const was = this.battery.isBoosting(p.id);
         this.battery.stop(p.id, now);
         return { out: was ? [flame, this.batteryOut(now)] : [flame], close: [] };
+      }
+      case 'rules': {
+        if (this.rules.signal === msg.signal) return none();
+        this.rules = { ...this.rules, signal: msg.signal };
+        return { out: [{ to: 'all', msg: { type: 'rules', signal: msg.signal, by: p.id } }], close: [] };
       }
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
