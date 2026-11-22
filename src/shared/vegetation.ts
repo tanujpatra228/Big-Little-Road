@@ -107,3 +107,20 @@ export function scatterFlowers(terrain: Terrain, clusters = 80, singles = 160, c
   }
   return out;
 }
+
+/** Grass is full density this close to the camera, in metres. */
+export const GRASS_FULL_RADIUS = 26;
+/** And gone beyond this. In between it thins smoothly, so there are no density steps to see. */
+export const GRASS_FAR_RADIUS = 88;
+
+/**
+ * What fraction of a grass cell's tufts to draw, from its distance to the camera. Smooth rather than
+ * stepped, and it falls faster than linearly: the far lawn is mostly fog and terrain colour anyway, so
+ * its tufts are the cheapest thing in the frame to take away. `density` (0 to 1) is the player's
+ * setting and scales everything.
+ */
+export function grassKeep(distance: number, density = 1): number {
+  if (density <= 0) return 0;
+  const t = Math.min(1, Math.max(0, (distance - GRASS_FULL_RADIUS) / (GRASS_FAR_RADIUS - GRASS_FULL_RADIUS)));
+  return Math.min(1, density) * Math.pow(1 - t, 1.6);
+}

@@ -9,6 +9,8 @@ import { buildGrass } from './render/grass';
 import { CarTransformer } from './render/car-transformer';
 import { ChaseCam } from './render/chase-cam';
 import { OrbitCam } from './render/orbit-cam';
+import { PerfPanel } from './ui/perf-panel';
+import { AutoQualityController } from './game/auto-quality';
 import { InputDevices } from './game/input';
 import { createStage } from './render/stage';
 import { runShowcase } from './game/showcase';
@@ -51,6 +53,8 @@ async function boot(): Promise<void> {
 
   const chase = new ChaseCam(camera, terrain);
   const orbit = new OrbitCam(camera, terrain, stage.renderer.domElement);
+  const autoQ = new AutoQualityController(stage, grass);
+  const perf = new PerfPanel(stage, grass, autoQ, params.has('perf'));
   const input = new InputDevices();
 
   // Browsers only start audio after a gesture, so unlock on the first key, click or touch.
@@ -292,6 +296,9 @@ async function boot(): Promise<void> {
     get tether() { return tether; },
     pings,
     camera,
+    stage,
+    grass,
+    autoQ,
     get orbit() { return orbit; },
     spawn,
   };
@@ -299,9 +306,11 @@ async function boot(): Promise<void> {
   let last = performance.now();
   let acc = 0;
   stage.renderer.setAnimationLoop((now) => {
-    const frame = Math.min(0.1, (now - last) / 1000);
+    const rawDt = (now - last) / 1000;
+    const frame = Math.min(0.1, rawDt);
     last = now;
     acc += frame;
+    const cpuStart = performance.now();
 
     CAR_ORDER.forEach((r, i) => {
       if (input.wasPressed(`Digit${i + 1}`)) switchCar(r);
@@ -400,7 +409,11 @@ async function boot(): Promise<void> {
     hud.setAudio(!audio.running ? 'locked' : audio.isMuted ? 'muted' : 'on');
     hud.update(vehicle, role, frame, stage.quality());
     grass.update(now / 1000, camera);
+    const submitStart = performance.now();
+    stage.renderer.info.reset();
     stage.render(frame);
+    perf.frame(frame, submitStart - cpuStart, performance.now() - submitStart);
+    autoQ.frame(rawDt);
   });
 }
 

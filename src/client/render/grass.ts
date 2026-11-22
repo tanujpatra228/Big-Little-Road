@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '../../shared/rng';
 import type { Terrain } from '../../shared/terrain';
 import { PROPS } from '../../shared/net/props';
-import { FLOWER_COLOURS, scatterFlowers, scatterGrass, type Clearing, type Plant } from '../../shared/vegetation';
+import { FLOWER_COLOURS, grassKeep, scatterFlowers, scatterGrass, type Clearing, type Flower, type Plant } from '../../shared/vegetation';
 
 /** No grass where props start, so a board lying on the lawn is not hidden by it. */
 const CLEARINGS: Clearing[] = PROPS.map((p) => ({ x: p.start.x, z: p.start.z, r: 3.2 }));
@@ -70,6 +70,15 @@ export interface Grass {
   group: THREE.Group;
   /** Call every frame. Drives wind and distance-based density. */
   update(time: number, camera: THREE.Camera): void;
+  /** 0 to 1: how much of the lawn to draw. 1 is everything the distance rules allow. */
+  setDensity(d: number): void;
+  /** Show or hide the flowers. */
+  setFlowers(on: boolean): void;
+  /** Current density setting, 0 to 1. */
+  density(): number;
+  flowersOn(): boolean;
+  /** Tufts and triangles the grass would cost this frame, for the performance panel. */
+  stats(): { tufts: number; triangles: number };
 }
 
 interface Cell {
@@ -83,7 +92,9 @@ export function buildGrass(terrain: Terrain): Grass {
   const group = new THREE.Group();
   const uTime = { value: 0 };
 
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 1, metalness: 0 });
+  // Lambert, not PBR: the blades are matte with soft baked shading, so specular and reflections would cost
+  // a lot per pixel (grass is the most overdrawn thing on screen) and add nothing you could see.
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uTime;
     shader.vertexShader = shader.vertexShader
@@ -138,58 +149,123 @@ export function buildGrass(terrain: Terrain): Grass {
     cells.push({ mesh, full: list.length, cx: -half + ((i % n) + 0.5) * CELL, cz: -half + (Math.floor(i / n) + 0.5) * CELL });
   });
 
-  group.add(buildFlowers(terrain));
+  const flowers = buildFlowers(terrain);
+  group.add(flowers.group);
 
+  let density = 1;
+  let tufts = 0;
+  const trisPerTuft = (geo.index?.count ?? 0) / 3;
   return {
     group,
     update(time, camera) {
       uTime.value = time;
+      flowers.update(camera);
       const cam = camera.position;
+      tufts = 0;
       for (const cell of cells) {
         const d = Math.hypot(cell.cx - cam.x, cell.cz - cam.z);
-        const f = d < 38 ? 1 : d < 66 ? 0.55 : d < 100 ? 0.25 : 0;
-        const count = Math.floor(cell.full * f);
+        const count = Math.floor(cell.full * grassKeep(d, density));
         cell.mesh.count = count;
         cell.mesh.visible = count > 0;
+        tufts += count;
       }
     },
+    setDensity(d) {
+      density = Math.min(1, Math.max(0, d));
+    },
+    density: () => density,
+    flowersOn: () => flowers.group.visible,
+    setFlowers(on) {
+      flowers.group.visible = on;
+    },
+    stats: () => ({ tufts, triangles: tufts * trisPerTuft }),
   };
 }
 
 const PALETTE = [0xffffff, 0xff7aa8, 0xffd23f, 0xb48cff, 0xff8a4c];
 
-function buildFlowers(terrain: Terrain): THREE.Group {
+/** Flowers are binned into cells this wide, and cells farther than FLOWER_RADIUS from the camera are not drawn. */
+const FLOWER_CELL = 32;
+const FLOWER_RADIUS = 70;
+
+interface FlowerCell {
+  group: THREE.Group;
+  cx: number;
+  cz: number;
+}
+
+interface Flowers {
+  group: THREE.Group;
+  update(camera: THREE.Camera): void;
+  count(): number;
+}
+
+/**
+ * Flowers in clusters plus a few singles. They used to be three giant instanced meshes covering the
+ * whole yard, so every flower was processed every frame, including all those behind you. Now they sit
+ * in cells that the camera can cull, only nearby cells are drawn, and each flower is a few dozen
+ * triangles instead of about eighty (the yellow centre was a 96-triangle sphere the size of a pea).
+ */
+function buildFlowers(terrain: Terrain): Flowers {
   const group = new THREE.Group();
   const flowers = scatterFlowers(terrain, undefined, undefined, CLEARINGS);
 
-  const stemGeo = new THREE.CylinderGeometry(0.014, 0.018, 1, 4).translate(0, 0.5, 0);
-  const petalGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.035, 9);
-  const centreGeo = new THREE.SphereGeometry(0.05, 8, 6).scale(1, 0.7, 1);
+  const stemGeo = new THREE.CylinderGeometry(0.014, 0.018, 1, 4, 1, true).translate(0, 0.5, 0);
+  const petalGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.035, 7);
+  const centreGeo = new THREE.SphereGeometry(0.05, 5, 3).scale(1, 0.7, 1);
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a35, roughness: 1 });
+  const petalMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
+  const centreMat = new THREE.MeshStandardMaterial({ color: 0xf2b21a, roughness: 0.6 });
 
-  const stems = new THREE.InstancedMesh(stemGeo, new THREE.MeshStandardMaterial({ color: 0x4f8a35, roughness: 1 }), flowers.length);
-  const petals = new THREE.InstancedMesh(petalGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), flowers.length);
-  const centres = new THREE.InstancedMesh(centreGeo, new THREE.MeshStandardMaterial({ color: 0xf2b21a, roughness: 0.6 }), flowers.length);
+  const half = terrain.size / 2;
+  const n = Math.ceil(terrain.size / FLOWER_CELL);
+  const bins: Flower[][] = Array.from({ length: n * n }, () => []);
+  for (const f of flowers) {
+    const cx = Math.min(n - 1, Math.max(0, Math.floor((f.x + half) / FLOWER_CELL)));
+    const cz = Math.min(n - 1, Math.max(0, Math.floor((f.z + half) / FLOWER_CELL)));
+    bins[cz * n + cx]!.push(f);
+  }
 
+  const cells: FlowerCell[] = [];
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   const col = new THREE.Color();
-  flowers.forEach((f, i) => {
-    q.setFromEuler(e.set((Math.random() - 0.5) * 0.0, f.yaw, 0));
-    m.compose(new THREE.Vector3(f.x, f.y - 0.02, f.z), q, new THREE.Vector3(1, f.height, 1));
-    stems.setMatrixAt(i, m);
-    const tilt = q.setFromEuler(e.set(0.18, f.yaw, 0));
-    m.compose(new THREE.Vector3(f.x, f.y + f.height, f.z), tilt, new THREE.Vector3(1, 1, 1));
-    petals.setMatrixAt(i, m);
-    petals.setColorAt(i, col.setHex(PALETTE[f.colour % FLOWER_COLOURS] ?? 0xffffff));
-    m.compose(new THREE.Vector3(f.x, f.y + f.height + 0.02, f.z), tilt, new THREE.Vector3(1, 1, 1));
-    centres.setMatrixAt(i, m);
+  bins.forEach((list, bi) => {
+    if (list.length === 0) return;
+    const stems = new THREE.InstancedMesh(stemGeo, stemMat, list.length);
+    const petals = new THREE.InstancedMesh(petalGeo, petalMat, list.length);
+    const centres = new THREE.InstancedMesh(centreGeo, centreMat, list.length);
+    list.forEach((f, i) => {
+      q.setFromEuler(e.set(0, f.yaw, 0));
+      m.compose(new THREE.Vector3(f.x, f.y - 0.02, f.z), q, new THREE.Vector3(1, f.height, 1));
+      stems.setMatrixAt(i, m);
+      const tilt = q.setFromEuler(e.set(0.18, f.yaw, 0));
+      m.compose(new THREE.Vector3(f.x, f.y + f.height, f.z), tilt, new THREE.Vector3(1, 1, 1));
+      petals.setMatrixAt(i, m);
+      petals.setColorAt(i, col.setHex(PALETTE[f.colour % FLOWER_COLOURS] ?? 0xffffff));
+      m.compose(new THREE.Vector3(f.x, f.y + f.height + 0.02, f.z), tilt, new THREE.Vector3(1, 1, 1));
+      centres.setMatrixAt(i, m);
+    });
+    const cell = new THREE.Group();
+    for (const mesh of [stems, petals, centres]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      cell.add(mesh);
+    }
+    group.add(cell);
+    cells.push({ group: cell, cx: -half + ((bi % n) + 0.5) * FLOWER_CELL, cz: -half + (Math.floor(bi / n) + 0.5) * FLOWER_CELL });
   });
-  for (const mesh of [stems, petals, centres]) {
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.receiveShadow = true;
-    mesh.computeBoundingSphere();
-    group.add(mesh);
-  }
-  return group;
+
+  return {
+    group,
+    update(camera) {
+      const cam = camera.position;
+      // A cell reaches half its diagonal beyond its centre, so allow for that.
+      const reach = FLOWER_RADIUS + FLOWER_CELL * 0.71;
+      for (const c of cells) c.group.visible = Math.hypot(c.cx - cam.x, c.cz - cam.z) < reach;
+    },
+    count: () => flowers.length,
+  };
 }

@@ -10,6 +10,7 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 - [Audio](audio.md): all sound synthesized live with Web Audio, engine voices per car, surface-driven tyre noise, impacts, horn, ambience.
 - [Multiplayer](multiplayer.md): rooms on Durable Objects, join by link, smoothed remote cars, message budget, tests.
 - [Car abilities](car-abilities.md): plan for drift, jump and nitro on all cars, with per-car tuning, guard rails, controls and order of work.
+- [Performance](performance.md): what costs frames (grass, terrain, effects), what changed, automatic quality, the F3 panel, next levers.
 - [Ping wheel](ping-wheel.md): hold Q, flick to Go here, Wait, Tow me, Low battery or Look; markers, edge arrows, cooldown, budget.
 - [Cameras](camera.md): the chase camera and the orbit camera (V, drag to look, wheel to zoom).
 - [Switching cars](car-transform.md): momentum carried across a switch, the transformation animation and sound, how to preview it.

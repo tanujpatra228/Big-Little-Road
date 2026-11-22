@@ -8,6 +8,9 @@ import { createSky, SKY_COLORS, SUN_DIR } from './sky';
 
 export type Quality = 'low' | 'high';
 
+/** Most pixels per CSS pixel the high tier draws. A 2x retina screen at 2 is four times the pixels of 1 and the grass and post effects pay for every one of them; 1.5 looks nearly as sharp for 56% of the cost. */
+export const HIGH_MAX_PIXEL_RATIO = 1.5;
+
 const SHADOW_HALF = 38;
 
 /** Warm grade, gentle contrast and a soft vignette. Runs in linear space before tone mapping. */
@@ -50,6 +53,19 @@ export interface Stage {
   sun: THREE.DirectionalLight;
   quality(): Quality;
   setQuality(q: Quality): void;
+  /** Set the tier and a pixel ratio override (null for the tier's own) in one step, rebuilding the buffers once. */
+  configure(q: Quality, pixelRatio: number | null): void;
+  /** The tier's own pixel ratio, before any override. */
+  tierPixelRatio(q: Quality): number;
+  /** True when ?quality= fixed the tier, so nothing should change it automatically. */
+  pinned(): boolean;
+  /** Pixels per CSS pixel right now. */
+  pixelRatio(): number;
+  /** Override the pixel ratio (null goes back to the tier's own). */
+  setPixelRatio(r: number | null): void;
+  /** Turn the post-processing (MSAA, bloom, grade) on or off without changing anything else. */
+  setPost(on: boolean): void;
+  post(): boolean;
   resize(): void;
   /** Keep the shadow window centred on `target`, snapped to shadow texels so shadows do not shimmer. */
   followSun(target: THREE.Vector3): void;
@@ -58,6 +74,7 @@ export interface Stage {
 
 export function createStage(params: URLSearchParams): Stage {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.info.autoReset = false; // the panel counts a whole frame, not just the last pass
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
@@ -118,21 +135,22 @@ export function createStage(params: URLSearchParams): Stage {
     return c;
   };
 
+  let ratioOverride: number | null = null;
+  let postOverride: boolean | null = null;
+
   const applyQuality = (): void => {
     const high = quality === 'high';
-    renderer.setPixelRatio(high ? Math.min(devicePixelRatio, 2) : 1);
+    renderer.setPixelRatio(ratioOverride ?? (high ? Math.min(devicePixelRatio, HIGH_MAX_PIXEL_RATIO) : 1));
     renderer.setSize(innerWidth, innerHeight);
     sun.shadow.mapSize.set(high ? 2048 : 1024, high ? 2048 : 1024);
     sun.shadow.map?.dispose();
     sun.shadow.map = null;
     composer?.dispose();
-    composer = high ? buildComposer() : null;
+    composer = (postOverride ?? high) ? buildComposer() : null;
   };
   applyQuality();
 
   let clock = 0;
-  let sampleTime = 0;
-  let sampleFrames = 0;
 
   const stage: Stage = {
     renderer,
@@ -140,9 +158,29 @@ export function createStage(params: URLSearchParams): Stage {
     camera,
     sun,
     quality: () => quality,
+    pixelRatio: () => renderer.getPixelRatio(),
+    pinned: () => pinned,
+    tierPixelRatio: (q) => (q === 'high' ? Math.min(devicePixelRatio, HIGH_MAX_PIXEL_RATIO) : 1),
+    configure(q, ratio) {
+      quality = q;
+      ratioOverride = ratio;
+      postOverride = null;
+      applyQuality();
+    },
+    setPixelRatio(r) {
+      ratioOverride = r;
+      applyQuality();
+    },
+    setPost(on) {
+      postOverride = on;
+      applyQuality();
+    },
+    post: () => composer !== null,
     setQuality(q) {
       if (q === quality) return;
       quality = q;
+      ratioOverride = null;
+      postOverride = null;
       applyQuality();
     },
     resize() {
@@ -167,15 +205,6 @@ export function createStage(params: URLSearchParams): Stage {
       sky.material.uniforms.uTime!.value = clock;
       sky.mesh.position.copy(camera.position);
 
-      if (!pinned && quality === 'high' && clock > 1.5) {
-        sampleTime += dt;
-        sampleFrames++;
-        if (sampleTime >= 3) {
-          if (sampleFrames / sampleTime < 38) stage.setQuality('low');
-          sampleTime = 0;
-          sampleFrames = 0;
-        }
-      }
       if (composer) composer.render(dt);
       else renderer.render(scene, camera);
     },

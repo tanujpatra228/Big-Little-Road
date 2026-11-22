@@ -37,43 +37,69 @@ const terrainFragmentColor = /* glsl */ `
   if (tot < 0.05) { wa = vW0; wb = vW1; tot = dot(wa, vec4(1.0)) + dot(wb, vec4(1.0)); } // never go black
   wa /= max(tot, 1e-4); wb /= max(tot, 1e-4);
 
+  // Each pixel is almost always one surface, so only the patterns it actually has are worked out.
+  // A surface under a fraction of a percent of weight would change the colour by less than a shade.
+  const float MIN_W = 0.004;
+
   // Grass: mottled, with soft mowing stripes.
-  vec3 grass = mix(uGrassA, uGrassB, nLow * 0.8 + nMid * 0.35);
-  grass *= 1.0 + 0.06 * sin(p.x * 0.55 + nLow * 2.0) + (nHi - 0.5) * 0.06;
+  vec3 grass = vec3(0.0);
+  if (wa.x > MIN_W) {
+    grass = mix(uGrassA, uGrassB, nLow * 0.8 + nMid * 0.35);
+    grass *= 1.0 + 0.06 * sin(p.x * 0.55 + nLow * 2.0) + (nHi - 0.5) * 0.06;
+  }
 
   // Patio: pavers with grout.
-  vec2 cellId = floor(p / 1.5);
-  vec2 g = fract(p / 1.5);
-  float grout = 1.0 - smoothstep(0.0, 0.035, min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)));
-  vec3 patio = uPatio * (0.94 + t_hash(cellId) * 0.1 + (nHi - 0.5) * 0.06);
-  patio = mix(patio, patio * 0.62, grout);
+  vec3 patio = vec3(0.0);
+  if (wa.y > MIN_W) {
+    vec2 cellId = floor(p / 1.5);
+    vec2 g = fract(p / 1.5);
+    float grout = 1.0 - smoothstep(0.0, 0.035, min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)));
+    patio = uPatio * (0.94 + t_hash(cellId) * 0.1 + (nHi - 0.5) * 0.06);
+    patio = mix(patio, patio * 0.62, grout);
+  }
 
   // Sand: ripples and speckle.
-  float ripple = sin((p.x * 0.8 + p.y * 0.45) * 3.0 + nLow * 9.0) * 0.5 + 0.5;
-  vec3 sand = uSand * (0.93 + ripple * 0.09 + (nHi - 0.5) * 0.08);
+  vec3 sand = vec3(0.0);
+  if (wa.z > MIN_W) {
+    float ripple = sin((p.x * 0.8 + p.y * 0.45) * 3.0 + nLow * 9.0) * 0.5 + 0.5;
+    sand = uSand * (0.93 + ripple * 0.09 + (nHi - 0.5) * 0.08);
+  }
 
   // Mud: wet dark clay with drier lighter crusts, churned ruts and a glossy sheen in the wettest patches.
-  float mudWet = smoothstep(0.45, 0.65, t_fbm(p * 0.32 + 7.0));
-  float rut = abs(sin((p.x * 0.35 - p.y * 0.2) * 2.4 + nLow * 14.0));
-  float clump = t_noise(p * 6.0) * 0.5 + t_noise(p * 15.0) * 0.5;
-  vec3 mudDry = uMud * vec3(1.35, 1.22, 1.05) * (0.86 + clump * 0.34);
-  vec3 mudWetCol = uMud * vec3(0.78, 0.64, 0.52) * (0.88 + clump * 0.24);
-  vec3 mud = mix(mudDry, mudWetCol, mudWet);
-  mud *= 0.86 + 0.14 * smoothstep(0.0, 0.5, rut);
+  float mudWet = 0.0;
+  vec3 mud = vec3(0.0);
+  if (wa.w > MIN_W) {
+    mudWet = smoothstep(0.45, 0.65, t_fbm(p * 0.32 + 7.0));
+    float rut = abs(sin((p.x * 0.35 - p.y * 0.2) * 2.4 + nLow * 14.0));
+    float clump = t_noise(p * 6.0) * 0.5 + t_noise(p * 15.0) * 0.5;
+    vec3 mudDry = uMud * vec3(1.35, 1.22, 1.05) * (0.86 + clump * 0.34);
+    vec3 mudWetCol = uMud * vec3(0.78, 0.64, 0.52) * (0.88 + clump * 0.24);
+    mud = mix(mudDry, mudWetCol, mudWet);
+    mud *= 0.86 + 0.14 * smoothstep(0.0, 0.5, rut);
+  }
 
   // Rock: patchy with cracks.
-  float crack = smoothstep(0.0, 0.035, abs(t_fbm(p * 0.7) - 0.5));
-  vec3 rock = mix(uRock * 0.78, uRock * 1.08, nMid) * (0.82 + 0.18 * crack);
+  vec3 rock = vec3(0.0);
+  if (wb.x > MIN_W) {
+    float crack = smoothstep(0.0, 0.035, abs(t_fbm(p * 0.7) - 0.5));
+    rock = mix(uRock * 0.78, uRock * 1.08, nMid) * (0.82 + 0.18 * crack);
+  }
 
   // Gravel: lots of small stones.
-  float stones = t_noise(p * 11.0) * 0.6 + t_noise(p * 27.0) * 0.4;
-  vec3 gravel = uGravel * (0.78 + stones * 0.42) * (0.94 + nMid * 0.1);
+  vec3 gravel = vec3(0.0);
+  if (wb.z > MIN_W) {
+    float stones = t_noise(p * 11.0) * 0.6 + t_noise(p * 27.0) * 0.4;
+    gravel = uGravel * (0.78 + stones * 0.42) * (0.94 + nMid * 0.1);
+  }
 
   vec3 bed = mix(uMud, uSand, 0.35) * (0.8 + nMid * 0.2);
-  vec2 wall = vec2(vWP.x + vWP.z, vWP.y * 1.3);
-  float leaf = t_noise(wall * 2.2) * 0.6 + t_noise(wall * 7.0) * 0.4;
-  float height = clamp(vWP.y / 9.0, 0.0, 1.0);
-  vec3 hedge = mix(uGrassA * 0.55, uGrassB * 0.9, leaf) * (1.0 - 0.25 * height);
+  vec3 hedge = vec3(0.0);
+  if (wb.w > MIN_W) {
+    vec2 wall = vec2(vWP.x + vWP.z, vWP.y * 1.3);
+    float leaf = t_noise(wall * 2.2) * 0.6 + t_noise(wall * 7.0) * 0.4;
+    float height = clamp(vWP.y / 9.0, 0.0, 1.0);
+    hedge = mix(uGrassA * 0.55, uGrassB * 0.9, leaf) * (1.0 - 0.25 * height);
+  }
 
   vec3 col = grass * wa.x + patio * wa.y + sand * wa.z + mud * wa.w
            + rock * wb.x + bed * wb.y + gravel * wb.z + hedge * wb.w;

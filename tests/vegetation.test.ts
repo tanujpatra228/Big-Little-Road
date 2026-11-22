@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateTerrain, WATER_LEVEL } from '../src/shared/terrain';
 import { Surface } from '../src/shared/surfaces';
-import { FLOWER_COLOURS, scatterFlowers, scatterGrass } from '../src/shared/vegetation';
+import { FLOWER_COLOURS, scatterFlowers, scatterGrass, GRASS_FAR_RADIUS, GRASS_FULL_RADIUS, grassKeep } from '../src/shared/vegetation';
 
 const t = generateTerrain(20260);
 const grass = scatterGrass(t);
@@ -55,5 +55,50 @@ describe('flowers', () => {
       expect(f.colour).toBeGreaterThanOrEqual(0);
       expect(f.colour).toBeLessThan(FLOWER_COLOURS);
     }
+  });
+});
+
+describe('grass thinning by distance', () => {
+  it('is full close up and gone far away, never more than the player asked for', () => {
+    expect(grassKeep(0)).toBe(1);
+    expect(grassKeep(GRASS_FULL_RADIUS)).toBe(1);
+    expect(grassKeep(GRASS_FAR_RADIUS)).toBe(0);
+    expect(grassKeep(500)).toBe(0);
+    expect(grassKeep(10, 0.4)).toBeCloseTo(0.4, 12);
+  });
+
+  it('falls smoothly and only ever downward, so there are no density steps to see', () => {
+    let prev = 1;
+    let biggestStep = 0;
+    for (let d = 0; d <= 100; d += 0.5) {
+      const k = grassKeep(d);
+      expect(k).toBeLessThanOrEqual(prev + 1e-12);
+      biggestStep = Math.max(biggestStep, prev - k);
+      prev = k;
+    }
+    expect(biggestStep).toBeLessThan(0.06); // per half metre
+  });
+
+  it('drops faster than a straight line: the far lawn is the cheapest thing to lose', () => {
+    const mid = (GRASS_FULL_RADIUS + GRASS_FAR_RADIUS) / 2;
+    expect(grassKeep(mid)).toBeLessThan(0.5);
+  });
+
+  it('the density setting scales it, and zero turns grass off', () => {
+    for (const d of [0, 20, 40, 60, 80]) expect(grassKeep(d, 0.5)).toBeCloseTo(grassKeep(d) * 0.5, 12);
+    expect(grassKeep(5, 0)).toBe(0);
+    expect(grassKeep(5, 3)).toBe(1); // clamped
+  });
+
+  it('draws about 38% fewer tufts than the old stepped bands across the visible lawn', () => {
+    const oldKeep = (d: number): number => (d < 38 ? 1 : d < 66 ? 0.55 : d < 100 ? 0.25 : 0);
+    // Area-weighted: far rings hold more lawn, so this is what the camera actually pays for.
+    let oldCost = 0;
+    let newCost = 0;
+    for (let d = 1; d < 100; d += 1) {
+      oldCost += oldKeep(d) * d;
+      newCost += grassKeep(d) * d;
+    }
+    expect(newCost).toBeLessThan(oldCost * 0.66); // about 38% fewer tufts
   });
 });
