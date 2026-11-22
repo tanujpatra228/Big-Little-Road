@@ -19,6 +19,8 @@ export class Hud {
   private readonly signalBars: HTMLElement[] = [];
   private readonly signalText = document.createElement('span');
   private toastTimer = 0;
+  /** Set while a teammate is flipping us back over, to replace the usual flipped message. */
+  rescueText: string | null = null;
   private audioState = '';
   private frames = 0;
   private acc = 0;
@@ -162,7 +164,7 @@ export class Hud {
     if (v.isFlipped) {
       const left = Math.ceil(v.resetSecondsLeft);
       this.banner.style.display = 'block';
-      this.banner.textContent = left > 0 ? `Flipped. Wait for a teammate, or reset in ${left}s (R)` : 'Press R to reset';
+      this.banner.textContent = this.rescueText ?? (left > 0 ? `Flipped. A teammate who drives up to you will flip you back, or reset in ${left}s (R)` : 'Press R to reset');
     } else {
       this.banner.style.display = 'none';
     }

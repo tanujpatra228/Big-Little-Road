@@ -4,6 +4,7 @@ import type { CarSpec } from '../../shared/cars';
 import { resolveSurface, Surface } from '../../shared/surfaces';
 import { impactFromDelta, type Impact } from '../../shared/audio-model';
 import { NitroTank, boostFactor } from '../../shared/nitro';
+import { RIGHTED_AT, rollRate } from '../../shared/rescue';
 import { JumpState, airLevel, jumpImpulse, jumpSpeed } from '../../shared/jump';
 import type { PhysicsWorld } from './world';
 
@@ -385,6 +386,41 @@ export class Vehicle {
       spin: this.ctrl.wheelRotation(i) ?? 0,
       contact: this.ctrl.wheelIsInContact(i),
     };
+  }
+
+  /**
+   * One physics step of being helped over: spins the car about its own nose axis toward upright, with a
+   * little lift so the roof does not drag, and leaves the rest of its motion alone. `prefer` picks the
+   * direction when it is exactly upside down. Returns true once it is back on its wheels.
+   */
+  rollOver(prefer: 1 | -1, dt: number): boolean {
+    const q = this.body.rotation();
+    const up = { x: 2 * (q.x * q.y - q.w * q.z), y: 1 - 2 * (q.x * q.x + q.z * q.z), z: 2 * (q.y * q.z + q.w * q.x) };
+    const fwd = { x: 2 * (q.x * q.z + q.w * q.y), y: 2 * (q.y * q.z - q.w * q.x), z: 1 - 2 * (q.x * q.x + q.y * q.y) };
+    if (up.y >= RIGHTED_AT) return true;
+    const want = rollRate(up, fwd, prefer);
+    const w = this.body.angvel();
+    const have = w.x * fwd.x + w.y * fwd.y + w.z * fwd.z;
+    const k = Math.min(1, dt * 12);
+    const d = (want - have) * k;
+    this.body.setAngvel({ x: w.x + fwd.x * d, y: w.y + fwd.y * d, z: w.z + fwd.z * d }, true);
+    if (up.y < 0.2) {
+      const v = this.body.linvel();
+      if (v.y < 1.6) this.body.setLinvel({ x: v.x, y: 1.6, z: v.z }, true);
+    }
+    this.flippedFor = 0;
+    return false;
+  }
+
+  /** Debug only (?debug, key K): lands the car on its roof where it is, to try the rescue. */
+  debugFlip(): void {
+    const t = this.body.translation();
+    const q = this.body.rotation();
+    const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+    this.body.setTranslation({ x: t.x, y: t.y + 0.8, z: t.z }, true);
+    this.body.setRotation({ x: Math.sin(yaw / 2), y: 0, z: Math.cos(yaw / 2), w: 0 }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   }
 
   /** Puts the car upright where it stands. Used by the rescue reset. */

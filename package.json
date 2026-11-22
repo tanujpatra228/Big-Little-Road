@@ -10,7 +10,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
-    "e2e:net": "node scripts/net-smoke.mjs"
+    "e2e:net": "node scripts/net-smoke.mjs",
+    "e2e:ci": "bash scripts/ci-e2e.sh"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

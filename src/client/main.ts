@@ -10,6 +10,7 @@ import { CarTransformer } from './render/car-transformer';
 import { ChaseCam } from './render/chase-cam';
 import { OrbitCam } from './render/orbit-cam';
 import { BatteryView } from '../shared/battery';
+import { RescueController } from './game/rescue';
 import { SignalController } from './game/signal';
 import { PerfPanel } from './ui/perf-panel';
 import { AutoQualityController } from './game/auto-quality';
@@ -91,6 +92,7 @@ async function boot(): Promise<void> {
     vehicle = new Vehicle(pw, specs[r], x, z, yaw);
     vehicle.nitroSource = nitroSource;
     signal?.reset(); // a teleport or reset: forget old inputs
+    rescue?.reset();
     if (xform) xform.reset(specs[r]);
     else {
       xform = new CarTransformer(scene, specs[r]);
@@ -275,6 +277,14 @@ async function boot(): Promise<void> {
   const goalFiredAt = new Map<string, number>();
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
   const signal = new SignalController({ scene, terrain, remotes: () => remotes, role: () => role, selfId: () => (net.status === 'on' ? net.selfId : 'me'), vehicle: () => vehicle, audio });
+  const rescue = new RescueController({
+    vehicle: () => vehicle,
+    remotes: () => remotes,
+    // A flipped car asks the team for help, once, by itself (only in a room: alone there is no one to ask).
+    onFlipped: () => {
+      if (net.status === 'on') pings.send('tow', performance.now());
+    },
+  });
   const applySignalRule = (on: boolean): void => {
     signalRule = on;
     signal.setEnabled(on);
@@ -337,6 +347,7 @@ async function boot(): Promise<void> {
     autoQ,
     battery,
     signal,
+    rescue,
     get orbit() { return orbit; },
     spawn,
   };
@@ -353,6 +364,7 @@ async function boot(): Promise<void> {
     CAR_ORDER.forEach((r, i) => {
       if (input.wasPressed(`Digit${i + 1}`)) switchCar(r);
     });
+    if (params.has('debug') && input.wasPressed('KeyK')) vehicle.debugFlip();
     if (input.wasPressed('KeyR')) {
       if (vehicle.flippedFor >= FLIP_RESET_SECONDS || params.has('debug') || params.has('tune')) vehicle.resetUpright();
     }
@@ -374,6 +386,8 @@ async function boot(): Promise<void> {
     const rope = tether.update();
     pings.update(performance.now(), frame);
     signal.update(frame);
+    rescue.update(frame);
+    hud.rescueText = rescue.text;
     hud.setSignal(signal.enabled ? { strength: signal.strength, quality: signal.quality, lag: signal.lag } : null);
     // Reached a goal? Online the room announces it to everyone; alone we celebrate straight away.
     const here = vehicle.body.translation();
@@ -391,6 +405,7 @@ async function boot(): Promise<void> {
     let steps = 0;
     while (acc >= FIXED_DT && steps < 5) {
       vehicle.pushPlanar(rope.x, rope.z, FIXED_DT);
+      rescue.step(FIXED_DT);
       vehicle.step(signal.filter(input.read(FIXED_DT), FIXED_DT, vehicle.forwardSpeed()), FIXED_DT);
       pw.world.step();
       vehicle.afterPhysics();

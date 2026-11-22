@@ -26,6 +26,9 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      - name: Real-server end-to-end checks
+        run: bash scripts/ci-e2e.sh
+
       - name: Check Cloudflare secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
