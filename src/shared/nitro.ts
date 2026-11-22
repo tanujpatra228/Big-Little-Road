@@ -45,8 +45,19 @@ export class NitroTank {
   /**
    * Call once per physics step. `wanted` is the player holding the key with the throttle down,
    * i.e. boost would do something. Returns the smoothed boost strength 0..1.
+   *
+   * With a `shared` battery (in a room) the tank is only a window onto it: the level is whatever the
+   * team has, nothing drains or refills here, and boosting is allowed whenever the team battery is
+   * neither empty nor locked out. The room does the spending.
    */
-  update(wanted: boolean, dt: number): number {
+  update(wanted: boolean, dt: number, shared: { level: number; locked: boolean } | null = null): number {
+    if (shared) {
+      this.level = shared.level;
+      this._active = wanted && !shared.locked && shared.level > 0;
+      this.idle = 0;
+      this.lockedOut = shared.locked;
+      return this.fade(dt);
+    }
     if (this.lockedOut && this.level >= RESTART_LEVEL) this.lockedOut = false;
     this._active = wanted && !this.lockedOut && this.level > 0;
     if (this._active) {
@@ -60,6 +71,11 @@ export class NitroTank {
       this.idle += dt;
       if (this.idle >= REGEN_DELAY) this.level = Math.min(1, this.level + REGEN_PER_SECOND * dt);
     }
+    return this.fade(dt);
+  }
+
+  /** Moves the smoothed boost strength toward on or off. */
+  private fade(dt: number): number {
     const target = this._active ? 1 : 0;
     const step = (target > this.blend ? BLEND_IN_RATE : BLEND_OUT_RATE) * dt;
     this.blend = Math.abs(target - this.blend) <= step ? target : this.blend + Math.sign(target - this.blend) * step;

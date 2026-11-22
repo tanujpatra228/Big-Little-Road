@@ -91,6 +91,8 @@ export class Vehicle {
   private readonly jumpState = new JumpState();
   /** Personal nitro tank. Carried across when the car transforms. */
   readonly nitro = new NitroTank();
+  /** In a room, where to read the team battery from; null while playing alone. Kept across a car switch. */
+  nitroSource: (() => { level: number; locked: boolean } | null) | null = null;
   /** Set on the step a hop fires; the game reads it once to play the sound. */
   private hopped = false;
   /** Seconds left of gentle over-speed drag after turning into another car, so momentum carries over. */
@@ -178,7 +180,7 @@ export class Vehicle {
     this.steerCmd = approach(this.steerCmd, target, 3.2, dt);
     // Nitro: held key plus throttle, drawn from the personal tank.
     const wantBoost = !!input.nitro && input.throttle > 0.02 && fwdSpeed > -0.5;
-    const boost = boostFactor(this.nitro.update(wantBoost, dt), this.nitro.active, spec.nitroForce, spec.nitroTop);
+    const boost = boostFactor(this.nitro.update(wantBoost, dt, this.nitroSource?.() ?? null), this.nitro.active, spec.nitroForce, spec.nitroTop);
     const top = spec.topSpeed * speedFrac * boost.top;
     const reverseTop = spec.reverseTopSpeed * speedFrac;
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
@@ -310,6 +312,7 @@ export class Vehicle {
     next.body.setTranslation({ x: t.x, y: t.y + dy, z: t.z }, true);
     next.body.setRotation(q, true);
     next.body.setLinvel(lv, true);
+    next.nitroSource = old.nitroSource;
     next.nitro.level = old.nitro.level;
     next.nitro.blend = old.nitro.blend;
     next.body.setAngvel(av, true);

@@ -163,3 +163,41 @@ describe.each(CAR_ORDER)('%s nitro on real physics', (role) => {
     }
   });
 });
+
+describe('nitro tank reading a shared (team) battery', () => {
+  it('is only a window onto it: the level follows the team, nothing drains or refills locally', () => {
+    const t = new NitroTank();
+    for (let i = 0; i < 60; i++) t.update(true, dt, { level: 0.6, locked: false });
+    expect(t.level).toBeCloseTo(0.6, 12);
+    expect(t.active).toBe(true);
+    for (let i = 0; i < 600; i++) t.update(false, dt, { level: 0.6, locked: false });
+    expect(t.level).toBeCloseTo(0.6, 12); // no local refill either
+  });
+
+  it('boosts only while the team battery has charge and is not locked out', () => {
+    const t = new NitroTank();
+    t.update(true, dt, { level: 0, locked: false });
+    expect(t.active).toBe(false);
+    t.update(true, dt, { level: 0.5, locked: true });
+    expect(t.active).toBe(false);
+    t.update(true, dt, { level: 0.5, locked: false });
+    expect(t.active).toBe(true);
+    t.update(false, dt, { level: 0.5, locked: false });
+    expect(t.active).toBe(false);
+  });
+
+  it('fades in and out the same way as the personal tank', () => {
+    const t = new NitroTank();
+    t.update(true, dt, { level: 1, locked: false });
+    expect(t.blend).toBeCloseTo(BLEND_IN_RATE * dt);
+    for (let i = 0; i < 60; i++) t.update(true, dt, { level: 1, locked: false });
+    expect(t.blend).toBe(1);
+  });
+
+  it('going back to playing alone resumes the personal rules', () => {
+    const t = new NitroTank();
+    t.update(true, dt, { level: 0.3, locked: false });
+    t.update(true, dt, null);
+    expect(t.level).toBeLessThan(0.3); // draining personally again
+  });
+});

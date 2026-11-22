@@ -111,6 +111,10 @@ Decided: Space jumps, C is the handbrake and later the drift key, Shift is nitro
 - Known risk, as predicted: a boosted Scout crosses the 160 m yard in about 6 s. Revisit after a playtest (bigger map or lower boosted top speed).
 - Not done: shared-battery nitro for missions (Phase 3), the drift charge (arrives with drift), a boosted-landing or boost-while-towing check.
 
+## Shared battery: as built
+
+In a room, nitro draws from one team battery instead of the personal tank (alone it is still the personal tank). See `shared-battery.md`.
+
 ## Open questions for the owner (answered above)
 
 1. Controls: keep Space as handbrake and put jump on E, or Space as jump?

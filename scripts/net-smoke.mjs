@@ -122,6 +122,40 @@ check('lowercase room code rejected (400)', wrong.status === 400);
 const noUpgrade = await fetch(`${base}/api/rooms/ABCD/ws`);
 check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
 
+// ---- the team battery, in a room of its own (real clock: the room books drain from Date.now())
+{
+  const bc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(bc, 'Pat'); await p.hello(); await sleep(250);
+  const q = new Client(bc, 'Quin'); await q.hello(); await sleep(250);
+  check('a fresh room starts with a full battery in the welcome', p.of('welcome')[0]?.battery?.level === 1000 && p.of('welcome')[0].battery.boosters === 0);
+
+  p.send({ type: 'nitro', on: true }); await sleep(300);
+  const seen = (c, n) => c.of('battery').some((m) => m.battery.boosters === n);
+  check('boosting is announced to everyone with one booster', seen(p, 1) && seen(q, 1));
+  check('the flame still reaches the other player', q.of('nitro').some((m) => m.id === 'p1' && m.on === true));
+
+  q.send({ type: 'nitro', on: true }); await sleep(300);
+  check('a second booster is counted for both', seen(p, 2) && seen(q, 2));
+  const mid = q.of('battery').at(-1).battery;
+  check('the level fell from the room clock, in thousandths', mid.level < 1000 && mid.level > 800, `level ${mid.level}`);
+
+  const late = new Client(bc, 'Late'); await late.hello(); await sleep(300);
+  const lw = late.of('welcome')[0];
+  check('a late joiner is told how many are draining and the level', lw?.battery?.boosters === 2 && lw.battery.level < 1000, JSON.stringify(lw?.battery));
+
+  p.send({ type: 'nitro', on: false }); await sleep(250);
+  check('stopping one drops the count to one', seen(q, 1) && q.of('battery').at(-1).battery.boosters === 1);
+  q.send({ type: 'nitro', on: false }); await sleep(250);
+  const last = p.of('battery').at(-1).battery;
+  check('stopping the last one starts the refill delay', last.boosters === 0 && last.regenIn > 0 && last.regenIn <= 1500, JSON.stringify(last));
+
+  // Drain it with a booster that then disconnects: the room must stop counting them.
+  late.send({ type: 'nitro', on: true }); await sleep(250);
+  late.close(); await sleep(400);
+  check('a booster who disconnects is dropped from the count', p.of('battery').at(-1).battery.boosters === 0);
+  for (const x of [p, q, late]) try { x.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

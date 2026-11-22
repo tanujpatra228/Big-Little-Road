@@ -1,3 +1,4 @@
+import type { BatteryInfo } from '../../shared/battery';
 import type { CarRole } from '../../shared/cars';
 import { quantizePose, type PoseState } from '../../shared/net/pose';
 import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame } from '../../shared/net/protocol';
@@ -6,7 +7,9 @@ import type { PropInfo } from '../../shared/net/props';
 export type NetStatus = 'off' | 'connecting' | 'on' | 'reconnecting' | 'full' | 'failed';
 
 export interface RoomHandlers {
-  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[]): void;
+  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[], battery?: BatteryInfo): void;
+  /** The team battery changed. */
+  battery(info: BatteryInfo): void;
   join(p: PlayerInfo): void;
   leave(id: string): void;
   /** `at` is performance.now() when the frame arrived. */
@@ -162,7 +165,7 @@ export class RoomClient {
         this.selfId = msg.id;
         this.tries = 0;
         this.setStatus('on');
-        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? []);
+        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? [], msg.battery);
         break;
       case 'join':
         this.h.join(msg.player);
@@ -177,6 +180,9 @@ export class RoomClient {
       }
       case 'car':
         this.h.car(msg.id, msg.role);
+        break;
+      case 'battery':
+        this.h.battery(msg.battery);
         break;
       case 'horn':
         this.h.horn(msg.id, msg.on);

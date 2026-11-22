@@ -147,3 +147,84 @@ describe('hibernation', () => {
     expect(to(r, 'c7').find((m) => m.type === 'welcome')).toMatchObject({ id: 'p1' });
   });
 });
+
+describe('the team battery in the room', () => {
+  const batteryMsgs = (r: Result, conn: string): Array<Extract<ServerMsg, { type: 'battery' }>> =>
+    to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'battery' }> => m.type === 'battery');
+  const twoPlayers = (): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb'), 0);
+    return room;
+  };
+
+  it('a newcomer is told the battery level in their welcome', () => {
+    const room = twoPlayers();
+    room.message('c1', { type: 'nitro', on: true }, 1000);
+    const r = room.hello('c3', hello('Cy', 'key-cccccccc'), 3000);
+    const w = to(r, 'c3').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.battery).toBeDefined();
+    expect(w.battery!.boosters).toBe(1);
+    expect(w.battery!.level).toBe(800); // two seconds of one car: a fifth of ten
+  });
+
+  it('boosting tells everyone the battery, and tells the others about the flame as before', () => {
+    const room = twoPlayers();
+    const r = room.message('c1', { type: 'nitro', on: true }, 1000);
+    expect(batteryMsgs(r, 'c1')[0]!.battery).toMatchObject({ boosters: 1, locked: false, level: 1000 });
+    expect(batteryMsgs(r, 'c2')).toHaveLength(1);
+    expect(to(r, 'c2')).toContainEqual({ type: 'nitro', id: 'p1', on: true });
+    expect(to(r, 'c1').some((m) => m.type === 'nitro')).toBe(false); // not echoed to the sender
+  });
+
+  it('a second boosting car doubles the drain; stopping one halves it again', () => {
+    const room = twoPlayers();
+    room.message('c1', { type: 'nitro', on: true }, 0);
+    const r2 = room.message('c2', { type: 'nitro', on: true }, 1000);
+    expect(batteryMsgs(r2, 'c1')[0]!.battery).toMatchObject({ boosters: 2, level: 900 });
+    const r3 = room.message('c2', { type: 'nitro', on: false }, 2000);
+    expect(batteryMsgs(r3, 'c1')[0]!.battery).toMatchObject({ boosters: 1, level: 700 });
+  });
+
+  it('stopping when you were not boosting changes nothing for the battery, but the flame still goes out', () => {
+    const room = twoPlayers();
+    const r = room.message('c1', { type: 'nitro', on: false }, 500);
+    expect(batteryMsgs(r, 'c1')).toHaveLength(0);
+    expect(to(r, 'c2')).toContainEqual({ type: 'nitro', id: 'p1', on: false });
+  });
+
+  it('when it runs dry nobody can start: the asker is told, and no flame is shown', () => {
+    const room = twoPlayers();
+    room.message('c1', { type: 'nitro', on: true }, 0);
+    room.message('c2', { type: 'nitro', on: true }, 0); // two cars: dry in 5 s
+    const r = room.message('c1', { type: 'nitro', on: true }, 6000);
+    expect(r.out).toHaveLength(1);
+    expect(r.out[0]!.to).toEqual({ conn: 'c1' });
+    expect(batteryMsgs(r, 'c1')[0]!.battery).toMatchObject({ locked: true, boosters: 0 });
+    expect(to(r, 'c2').some((m) => m.type === 'nitro')).toBe(false);
+  });
+
+  it('a player who leaves while boosting stops draining, and everyone is told', () => {
+    const room = twoPlayers();
+    room.message('c1', { type: 'nitro', on: true }, 0);
+    const r = room.close('c1', 1000);
+    expect(r.out.some((o) => o.msg.type === 'leave')).toBe(true);
+    expect(batteryMsgs(r, 'c2')[0]!.battery).toMatchObject({ boosters: 0, level: 900 });
+  });
+
+  it('a car that leaves while not boosting sends no battery message', () => {
+    const room = twoPlayers();
+    expect(batteryMsgs(room.close('c1', 100), 'c2')).toHaveLength(0);
+  });
+
+  it('works off the clock it is given, never its own: the same events at different times give different levels', () => {
+    const a = twoPlayers();
+    const b = twoPlayers();
+    a.message('c1', { type: 'nitro', on: true }, 0);
+    b.message('c1', { type: 'nitro', on: true }, 0);
+    const ra = a.message('c1', { type: 'nitro', on: false }, 2000);
+    const rb = b.message('c1', { type: 'nitro', on: false }, 6000);
+    expect(batteryMsgs(ra, 'c2')[0]!.battery.level).toBe(800);
+    expect(batteryMsgs(rb, 'c2')[0]!.battery.level).toBe(400);
+  });
+});

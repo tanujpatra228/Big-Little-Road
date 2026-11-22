@@ -9,6 +9,7 @@ import { buildGrass } from './render/grass';
 import { CarTransformer } from './render/car-transformer';
 import { ChaseCam } from './render/chase-cam';
 import { OrbitCam } from './render/orbit-cam';
+import { BatteryView } from '../shared/battery';
 import { PerfPanel } from './ui/perf-panel';
 import { AutoQualityController } from './game/auto-quality';
 import { InputDevices } from './game/input';
@@ -72,6 +73,13 @@ async function boot(): Promise<void> {
   let vehicle: Vehicle;
   let xform: CarTransformer;
   let gravity = 9.81;
+  /** The team battery as this player sees it. Only used in a room; alone, nitro uses a personal tank. */
+  const battery = new BatteryView();
+  const nitroSource = (): { level: number; locked: boolean } | null => {
+    if (net.status !== 'on' || !battery.known) return null;
+    const b = battery.at(performance.now());
+    return { level: b.level, locked: b.locked };
+  };
 
   /** Put a fresh car at a spot, upright and still. Used for the first spawn, resets and teleports. */
   const spawn = (r: CarRole, x: number, z: number, yaw: number): void => {
@@ -80,6 +88,7 @@ async function boot(): Promise<void> {
     role = r;
     if (changed) net.sendCar(r);
     vehicle = new Vehicle(pw, specs[r], x, z, yaw);
+    vehicle.nitroSource = nitroSource;
     if (xform) xform.reset(specs[r]);
     else {
       xform = new CarTransformer(scene, specs[r]);
@@ -157,8 +166,10 @@ async function boot(): Promise<void> {
   };
   const net: RoomClient = new RoomClient(
     {
-      welcome(id, code, list, props) {
+      welcome(id, code, list, props, bat) {
         tether.onWelcome(props);
+        if (bat) battery.receive(bat, performance.now());
+        else battery.reset();
         roster.clear();
         for (const r of remotes.values()) r.dispose();
         remotes.clear();
@@ -225,7 +236,11 @@ async function boot(): Promise<void> {
       ping(id, kind, x, z) {
         pings.onRemote(id, kind, x, z, performance.now());
       },
+      battery(info) {
+        battery.receive(info, performance.now());
+      },
       status() {
+        if (net.status !== 'on') battery.reset(); // out of the room: back to the personal tank
         if (net.status === 'off') {
           tether.onOffline();
           for (const r of remotes.values()) r.dispose();
@@ -299,6 +314,7 @@ async function boot(): Promise<void> {
     stage,
     grass,
     autoQ,
+    battery,
     get orbit() { return orbit; },
     spawn,
   };
@@ -383,7 +399,9 @@ async function boot(): Promise<void> {
     if (boosting !== nitroSent) {
       nitroSent = boosting;
       net.sendNitro(boosting);
+      battery.selfBoost(boosting, performance.now()); // our own boost shows at once; the room's snapshot confirms it
     }
+    hud.setTeamBattery(net.status === 'on' && battery.known ? battery.at(performance.now()).boosters : null);
     const horning = input.isDown('KeyH');
     if (horning !== hornSent) {
       hornSent = horning;

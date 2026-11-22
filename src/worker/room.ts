@@ -126,7 +126,7 @@ export class Room extends DurableObject<Env> {
     const att = ws.deserializeAttachment() as Attachment | null;
     const logic = await this.ensureLogic();
     if (!att || !logic) return;
-    const result = logic.close(att.conn);
+    const result = logic.close(att.conn, Date.now());
     this.dispatch(result);
     if (result.out.length) await this.persist(); // players or a released prop changed
   }

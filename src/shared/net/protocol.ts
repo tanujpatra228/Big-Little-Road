@@ -1,5 +1,6 @@
 import { CAR_ORDER, type CarRole } from '../cars';
 import { MAX_FRAME_BYTES } from '../constants';
+import type { BatteryInfo } from '../battery';
 import type { PropInfo } from './props';
 
 /**
@@ -57,7 +58,7 @@ export type ClientMsg =
   | { type: 'goal'; id: string };
 
 export type ServerMsg =
-  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[] }
+  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo }
   | { type: 'join'; player: PlayerInfo }
   | { type: 'leave'; id: string }
   | ({ type: 'pose'; id: string } & PoseFrame)
@@ -67,6 +68,8 @@ export type ServerMsg =
   | { type: 'ping'; id: string; kind: PingKind; x: number; z: number }
   | { type: 'prop'; prop: PropInfo }
   | { type: 'goal'; id: string; by: string }
+  /** The team battery changed (someone started or stopped boosting). Everyone extrapolates it from here. */
+  | { type: 'battery'; battery: BatteryInfo }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 

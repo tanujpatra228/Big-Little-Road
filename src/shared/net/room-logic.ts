@@ -2,6 +2,7 @@ import type { CarRole } from '../cars';
 import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type ServerMsg } from './protocol';
 import { PropsLogic, toInfo, type PropState } from './props';
 import { GOAL_COOLDOWN_MS, goalById } from '../goals';
+import { SharedBattery, toBatteryInfo } from '../battery';
 
 /**
  * All room rules in one pure state machine: no sockets, no timers, no clock of its own.
@@ -46,6 +47,9 @@ const none = (): Result => ({ out: [], close: [] });
 export class RoomLogic {
   readonly players = new Map<string, Player>();
   props = new PropsLogic();
+  /** The team battery. Not saved across a hibernation: a room that slept long enough has refilled anyway. */
+  readonly battery = new SharedBattery();
+  private lastNow = 0;
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
@@ -98,7 +102,7 @@ export class RoomLogic {
       existing.tokens = BUCKET;
       existing.lastRefill = now;
       return {
-        out: this.welcomeAndJoin(existing, conn),
+        out: this.welcomeAndJoin(existing, conn, now),
         close: stale !== conn ? [{ conn: stale, reason: 'replaced' }] : [],
       };
     }
@@ -107,12 +111,12 @@ export class RoomLogic {
     if (!id) return { out: [{ to: { conn }, msg: { type: 'full' } }], close: [{ conn, reason: 'room full' }] };
     const p: Player = { id, name: msg.name, role: msg.role, key: msg.key, conn, tokens: BUCKET, lastRefill: now, violations: 0 };
     this.players.set(id, p);
-    return { out: this.welcomeAndJoin(p, conn), close: [] };
+    return { out: this.welcomeAndJoin(p, conn, now), close: [] };
   }
 
-  private welcomeAndJoin(p: Player, conn: string): Out[] {
+  private welcomeAndJoin(p: Player, conn: string, now: number): Out[] {
     return [
-      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo) } },
+      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)) } },
       { to: { except: conn }, msg: { type: 'join', player: this.info(p) } },
     ];
   }
@@ -121,6 +125,7 @@ export class RoomLogic {
   message(conn: string, msg: ClientMsg, now: number): Result {
     const p = this.byConn(conn);
     if (!p) return { out: [], close: [{ conn, reason: 'no hello' }] };
+    this.lastNow = now;
 
     p.tokens = Math.min(BUCKET, p.tokens + ((now - p.lastRefill) / 1000) * REFILL_PER_S);
     p.lastRefill = now;
@@ -142,8 +147,20 @@ export class RoomLogic {
         return { out: [{ to: 'all', msg: { type: 'car', id: p.id, role: msg.role } }], close: [] };
       case 'horn':
         return { out: [{ to: { except: conn }, msg: { type: 'horn', id: p.id, on: msg.on } }], close: [] };
-      case 'nitro':
-        return { out: [{ to: { except: conn }, msg: { type: 'nitro', id: p.id, on: msg.on } }], close: [] };
+      case 'nitro': {
+        // The flame goes to everyone else as before. The battery is the room's: boosting spends it.
+        const flame: Out = { to: { except: conn }, msg: { type: 'nitro', id: p.id, on: msg.on } };
+        if (msg.on) {
+          if (!this.battery.start(p.id, now)) {
+            // Empty or locked out: do not show a flame, and tell this player so their own view agrees.
+            return { out: [{ to: { conn }, msg: { type: 'battery', battery: toBatteryInfo(this.battery.snapshot(now)) } }], close: [] };
+          }
+          return { out: [flame, this.batteryOut(now)], close: [] };
+        }
+        const was = this.battery.isBoosting(p.id);
+        this.battery.stop(p.id, now);
+        return { out: was ? [flame, this.batteryOut(now)] : [flame], close: [] };
+      }
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -168,11 +185,21 @@ export class RoomLogic {
     }
   }
 
-  close(conn: string): Result {
+  private batteryOut(now: number): Out {
+    return { to: 'all', msg: { type: 'battery', battery: toBatteryInfo(this.battery.snapshot(now)) } };
+  }
+
+  /** `now` defaults to the last time we heard from anyone, which is all a test without a clock needs. */
+  close(conn: string, now: number = this.lastNow): Result {
     const p = this.byConn(conn);
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
     const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
+    // A car that leaves stops draining the team battery.
+    if (this.battery.isBoosting(p.id)) {
+      this.battery.stop(p.id, now);
+      out.push(this.batteryOut(now));
+    }
     const freed = this.props.release(p.id); // a car that leaves lets go of the plank
     if (freed) out.push({ to: 'all', msg: { type: 'prop', prop: toInfo(freed) } });
     return { out, close: [] };

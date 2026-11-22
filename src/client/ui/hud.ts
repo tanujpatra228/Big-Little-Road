@@ -14,6 +14,7 @@ export class Hud {
   private readonly toastEl = document.createElement('div');
   private readonly nitroBar = document.createElement('div');
   private readonly nitroFill = document.createElement('i');
+  private readonly nitroLabel = document.createElement('div');
   private toastTimer = 0;
   private audioState = '';
   private frames = 0;
@@ -39,6 +40,9 @@ export class Hud {
       .hud .nitro{position:absolute;left:20px;bottom:128px;width:150px;height:10px;border-radius:999px;background:#0008;border:1px solid #fff4;overflow:hidden}
       .hud .nitro i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff7a1a,#ffd23f);transform-origin:left;transition:background .2s}
       .hud .nitro.low i{background:#e0412f}
+      .hud .nitro.team i{background:linear-gradient(90deg,#2bb3ff,#7ef0d8)}
+      .hud .nitro.team.run i{background:linear-gradient(90deg,#7ef0d8,#e6fff8)}
+      .hud .nitrolabel{position:absolute;left:20px;bottom:142px;font-size:11px;font-weight:600;letter-spacing:.04em;opacity:.9;display:none}
       .hud .nitro.run i{background:linear-gradient(90deg,#ffd23f,#fff3b0)}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
       .hud .sound{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:13px;opacity:.85;background:#0006;padding:5px 12px;border-radius:999px}
@@ -56,6 +60,7 @@ export class Hud {
     this.nitroBar.className = 'nitro';
     this.nitroBar.title = 'Nitro (Shift)';
     this.nitroBar.append(this.nitroFill);
+    this.nitroLabel.className = 'nitrolabel';
     const help = document.createElement('div');
     help.className = 'help';
     help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
@@ -66,7 +71,7 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel);
     document.body.appendChild(this.root);
   }
 
@@ -87,6 +92,18 @@ export class Hud {
   setPrompt(text: string | null): void {
     this.prompt.style.display = text ? 'block' : 'none';
     if (text) this.prompt.textContent = text;
+  }
+
+  /**
+   * In a room the nitro bar is the TEAM battery: tinted blue-green and labelled, with how many cars are
+   * draining it right now. Pass null when playing alone (the personal tank).
+   */
+  setTeamBattery(boosters: number | null): void {
+    const team = boosters !== null;
+    this.nitroBar.classList.toggle('team', team);
+    this.nitroBar.title = team ? 'Team battery, shared by everyone in the room (Shift to boost)' : 'Nitro (Shift)';
+    this.nitroLabel.style.display = team ? 'block' : 'none';
+    if (team) this.nitroLabel.textContent = boosters > 0 ? `TEAM BATTERY · ${boosters} boosting` : 'TEAM BATTERY';
   }
 
   /** Shows a hint until the browser lets audio start, and a note when muted. */
