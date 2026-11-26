@@ -19,7 +19,7 @@ Starting needs 2 players, and both cars must reach each goal. A player who swaps
 
 ## How it is built
 
-- `shared/crawl.ts`, pure: `buildCrawlLine` (a path search over a 1 m grid with room for the widest car beside every tall boulder, straightened and cut into marks), `nearestOnLine`, `pointAt`, and `CrawlRun` (checkpoints and the lost rule, fed the time step). Because the line is worked out from the boulders it always exists and always fits, on every seed tested; every browser computes the same line.
+- `shared/crawl.ts`, pure: `buildCrawlLine` (a path search over a 1 m grid with room for the widest car beside every tall boulder, forced through two bends 8 m either side of the straight way across so that driving straight is off the line, then straightened and cut into marks), `nearestOnLine`, `pointAt`, and `CrawlRun` (checkpoints and the lost rule, fed the time step). Because the line is worked out from the boulders it always exists and always fits, on every seed tested; every browser computes the same line.
 - `shared/gear.ts`, pure: which roles have low range, the factors, the toggle. `Vehicle` applies them in `step` (`gear`, `toggleGear`) and has `placeAt` for sending a car to a checkpoint.
 - `shared/goals.ts`: `rock-gate` and `rock-far`, marked `missionOnly` so they never fire in free play and the room ignores them if a client sends them by themselves.
 - `shared/missions.ts`: the `rockcrawl` definition. Both stages are `reach` goals with `who: 'all'`.
@@ -34,7 +34,7 @@ No new network messages. The line, the marks, the dust and the lost rule are all
 - `tests/crawl.test.ts` (14 checks): deterministic; runs from the house side to the far side inside the field; evenly spaced marks; on 12 seeds it exists and keeps more than the Hauler's half width plus a margin from every tall boulder along its whole length; a car driving it is never sent back and banks checkpoints; wandering off sends it to the right checkpoint with the right heading; clipping an edge is forgiven; no repeat right after; nothing outside the field; cutting a bend does not skip a checkpoint.
 - `tests/gear.test.ts`: roles, factors, and on the real physics: low range caps the Hauler's speed, reaches its speed sooner, turns at least as sharply at crawl speed, a Scout told to go low is unchanged, `placeAt` stands the car up and still.
 - `tests/mission-defs.test.ts`: every mission only reaches goals that exist; Rock Crawl needs both cars at each stage.
-- Real browsers (two players): see the run notes in the commit; the Scout sees the marks and no dust, the Hauler sees dust and no marks, G switches the Hauler to low and the Scout stays in high, a stray Hauler is put back and the room counts a reset, both at the far goal completes with the results card.
+- Real browsers (two players, real worker): both build the same 58 m line; the Scout has marks and clear air (fog 0.004), the Hauler has no marks and dust (fog 0.12); G puts the Hauler in low range with its badge and leaves the Scout in high with no badge; a Hauler placed 5.5 m off the line is sent back to the checkpoint with the toast and the room counts a reset; both cars at the far goal completes the mission with the results card (two stars, as the reset cost the third) and the dust clears.
 
 ## Not done
 
