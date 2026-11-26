@@ -23,6 +23,8 @@ export const CHECKPOINT_EVERY = 5;
 export const LOST_AFTER = 1.4;
 /** Seconds after being sent back before the rule applies again. */
 export const LOST_COOLDOWN = 2.5;
+/** How far the forced bends sit to either side of the straight way across, in metres. */
+export const BEND = 8;
 /** Room a car needs beside a boulder. The Hauler is about 1.6 wide. */
 export const CLEARANCE = 1.0;
 
@@ -62,6 +64,7 @@ export function buildCrawlLine(boulders: readonly Boulder[]): CrawlLine & { clea
 }
 
 const CELL = 1;
+const GRID_MARGIN = 0.3;
 const N = Math.ceil((ROCK.r * 2) / CELL) + 1;
 
 function search(tall: readonly Boulder[], clearance: number): Pt[] | null {
@@ -81,11 +84,13 @@ function search(tall: readonly Boulder[], clearance: number): Pt[] | null {
       }
       let nearest = Infinity;
       for (const b of tall) nearest = Math.min(nearest, dist(p, b) - b.radius);
-      if (nearest < clearance) blocked[k] = 1;
-      else risk[k] = Math.max(0, 1 - (nearest - clearance) / 2);
+      // The grid keeps a little extra room, because the path between two cell centres can cut a corner
+      // by up to a third of a metre. The straightened path is then checked against the plain clearance.
+      if (nearest < clearance + GRID_MARGIN) blocked[k] = 1;
+      else risk[k] = Math.max(0, 1 - (nearest - clearance - GRID_MARGIN) / 2);
     }
   }
-  const cellOf = (p: Pt): number => {
+  const cellOf = (p: Pt, reach: number): number => {
     let best = -1;
     let bestD = Infinity;
     for (let j = 0; j < N; j++) {
@@ -99,59 +104,81 @@ function search(tall: readonly Boulder[], clearance: number): Pt[] | null {
         }
       }
     }
-    return bestD <= 6 ? best : -1;
+    return bestD <= reach ? best : -1;
   };
-  const start = cellOf(CRAWL_ENTRY);
-  const goal = cellOf(CRAWL_FAR);
-  if (start < 0 || goal < 0) return null;
 
-  const g = new Float32Array(N * N).fill(Infinity);
-  const from = new Int32Array(N * N).fill(-1);
-  const closed = new Uint8Array(N * N);
-  const open = new Set<number>([start]);
-  g[start] = 0;
-  const gp = at(goal % N, Math.floor(goal / N));
-  const f = (k: number): number => g[k]! + dist(at(k % N, Math.floor(k / N)), gp);
-  while (open.size) {
-    let cur = -1;
-    let curF = Infinity;
-    for (const k of open) {
-      const v = f(k);
-      if (v < curF) {
-        curF = v;
-        cur = k;
+  /** One A* leg between two free cells. */
+  const leg = (start: number, goal: number): Pt[] | null => {
+    const g = new Float32Array(N * N).fill(Infinity);
+    const from = new Int32Array(N * N).fill(-1);
+    const closed = new Uint8Array(N * N);
+    const open = new Set<number>([start]);
+    g[start] = 0;
+    const gp = at(goal % N, Math.floor(goal / N));
+    const f = (k: number): number => g[k]! + dist(at(k % N, Math.floor(k / N)), gp);
+    while (open.size) {
+      let cur = -1;
+      let curF = Infinity;
+      for (const k of open) {
+        const v = f(k);
+        if (v < curF) {
+          curF = v;
+          cur = k;
+        }
       }
-    }
-    if (cur === goal) break;
-    open.delete(cur);
-    closed[cur] = 1;
-    const ci = cur % N;
-    const cj = Math.floor(cur / N);
-    for (let dj = -1; dj <= 1; dj++) {
-      for (let di = -1; di <= 1; di++) {
-        if (!di && !dj) continue;
-        const ni = ci + di;
-        const nj = cj + dj;
-        if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
-        const nk = nj * N + ni;
-        if (blocked[nk] || closed[nk]) continue;
-        // No cutting a corner between two blocked cells.
-        if (di && dj && (blocked[cj * N + ni] || blocked[nj * N + ci])) continue;
-        const step = (di && dj ? Math.SQRT2 : 1) * CELL * (1 + risk[nk]! * 1.5);
-        const ng = g[cur]! + step;
-        if (ng < g[nk]!) {
-          g[nk] = ng;
-          from[nk] = cur;
-          open.add(nk);
+      if (cur === goal) break;
+      open.delete(cur);
+      closed[cur] = 1;
+      const ci = cur % N;
+      const cj = Math.floor(cur / N);
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) continue;
+          const ni = ci + di;
+          const nj = cj + dj;
+          if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+          const nk = nj * N + ni;
+          if (blocked[nk] || closed[nk]) continue;
+          // No cutting a corner between two blocked cells.
+          if (di && dj && (blocked[cj * N + ni] || blocked[nj * N + ci])) continue;
+          const step = (di && dj ? Math.SQRT2 : 1) * CELL * (1 + risk[nk]! * 1.5);
+          const ng = g[cur]! + step;
+          if (ng < g[nk]!) {
+            g[nk] = ng;
+            from[nk] = cur;
+            open.add(nk);
+          }
         }
       }
     }
+    if (from[goal]! < 0 && goal !== start) return null;
+    const cells: Pt[] = [];
+    for (let k = goal; k >= 0; k = from[k]!) cells.push(at(k % N, Math.floor(k / N)));
+    return pull(cells.reverse(), tall, clearance);
+  };
+
+  // The line is forced through two bends, left then right of the straight way across, so a car that
+  // just drives straight is off the line and only a car that follows it gets through.
+  const ax = CRAWL_FAR.x - CRAWL_ENTRY.x;
+  const az = CRAWL_FAR.z - CRAWL_ENTRY.z;
+  const len = Math.hypot(ax, az);
+  const px = -az / len;
+  const pz = ax / len;
+  const bend = (t: number, side: number): Pt => ({ x: CRAWL_ENTRY.x + ax * t + px * BEND * side, z: CRAWL_ENTRY.z + az * t + pz * BEND * side });
+  const stops: number[] = [cellOf(CRAWL_ENTRY, 6)];
+  for (const w of [bend(0.3, 1), bend(0.7, -1)]) {
+    const c = cellOf(w, 7);
+    if (c >= 0) stops.push(c); // a crowded seed may lose a bend; the line still exists
   }
-  if (from[goal]! < 0 && goal !== start) return null;
-  const cells: Pt[] = [];
-  for (let k = goal; k >= 0; k = from[k]!) cells.push(at(k % N, Math.floor(k / N)));
-  cells.reverse();
-  return pull(cells, tall, clearance);
+  stops.push(cellOf(CRAWL_FAR, 6));
+  if (stops[0]! < 0 || stops[stops.length - 1]! < 0) return null;
+  let path: Pt[] = [];
+  for (let i = 1; i < stops.length; i++) {
+    const part = leg(stops[i - 1]!, stops[i]!);
+    if (!part) return null;
+    path = path.concat(i === 1 ? part : part.slice(1));
+  }
+  return path;
 }
 
 /** Straightens the path where it can be, without ever cutting inside the clearance. */

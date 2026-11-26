@@ -42,6 +42,11 @@ export class CrawlController {
 
   constructor(private readonly d: CrawlDeps) {}
 
+  /** Whether the Scout's marks are showing right now (for tests and the HUD). */
+  get marksVisible(): boolean {
+    return !!this.marks?.visible;
+  }
+
   /** The line, once worked out (it is built the first time a Rock Crawl starts). */
   get crawlLine(): CrawlLine | null {
     return this.line;

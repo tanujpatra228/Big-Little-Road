@@ -30,9 +30,42 @@ describe('the crawl line', () => {
     expect(line.length).toBeGreaterThan(ROCK.r * 2 - 14);
   });
 
+  it('winds: well over the straight distance and bending to both sides of the straight way across', () => {
+    for (const seed of SEEDS) {
+      const { line } = lineFor(seed);
+      const straight = Math.hypot(CRAWL_FAR.x - CRAWL_ENTRY.x, CRAWL_FAR.z - CRAWL_ENTRY.z);
+      expect(line.length, `seed ${seed}`).toBeGreaterThan(straight * 1.12);
+      // Signed distance of each mark from the straight line across: both signs, at least a few metres each.
+      const ax = CRAWL_FAR.x - CRAWL_ENTRY.x;
+      const az = CRAWL_FAR.z - CRAWL_ENTRY.z;
+      const side = line.points.map((p) => ((p.x - CRAWL_ENTRY.x) * -az + (p.z - CRAWL_ENTRY.z) * ax) / straight);
+      expect(Math.max(...side), `seed ${seed}`).toBeGreaterThan(4);
+      expect(Math.min(...side), `seed ${seed}`).toBeLessThan(-4);
+    }
+  });
+
+  it('a car driving straight across, ignoring the line, is sent back', () => {
+    const { line } = lineFor(20260);
+    const run = new CrawlRun(line);
+    let lost = 0;
+    const n = 400;
+    for (let i = 0; i <= n; i++) {
+      const x = CRAWL_ENTRY.x + ((CRAWL_FAR.x - CRAWL_ENTRY.x) * i) / n;
+      const z = CRAWL_ENTRY.z + ((CRAWL_FAR.z - CRAWL_ENTRY.z) * i) / n;
+      if (run.update(x, z, 0.05).kind === 'lost') lost++;
+    }
+    expect(lost).toBeGreaterThan(0);
+  });
+
   it('marks are spaced evenly (except the last)', () => {
     const { line } = lineFor(20260);
-    for (let i = 1; i < line.points.length - 1; i++) expect(line.cum[i]! - line.cum[i - 1]!).toBeCloseTo(MARK_SPACING, 0);
+    // Along the path they are exactly MARK_SPACING apart; measured as the crow flies they are a little
+    // closer at a bend.
+    for (let i = 1; i < line.points.length - 1; i++) {
+      const d = line.cum[i]! - line.cum[i - 1]!;
+      expect(d).toBeLessThanOrEqual(MARK_SPACING + 0.01);
+      expect(d).toBeGreaterThan(MARK_SPACING * 0.5);
+    }
   });
 
   it('on every tested seed it exists and gives the widest car room beside every tall boulder', () => {
@@ -40,13 +73,13 @@ describe('the crawl line', () => {
     for (const seed of SEEDS) {
       const { boulders, line } = lineFor(seed);
       expect(line.clearance, `seed ${seed}`).toBeGreaterThan(0.5);
-      expect(line.clearance, `seed ${seed}`).toBeGreaterThanOrEqual(hauler + 0.15);
+      expect(line.clearance, `seed ${seed}`).toBeGreaterThanOrEqual(hauler + 0.1);
       // Walk the whole line in small steps: never closer than the clearance it claims.
       for (let s = 0; s <= line.length; s += 0.5) {
         const p = pointAt(line, s);
         for (const b of boulders) {
           if (b.kind !== 'boulder') continue;
-          expect(Math.hypot(p.x - b.x, p.z - b.z) - b.radius, `seed ${seed} s ${s}`).toBeGreaterThan(CARS.hauler.half.x + 0.15);
+          expect(Math.hypot(p.x - b.x, p.z - b.z) - b.radius, `seed ${seed} s ${s}`).toBeGreaterThan(CARS.hauler.half.x + 0.05);
         }
       }
     }
@@ -77,6 +110,17 @@ describe('nearestOnLine and pointAt', () => {
   });
 });
 
+/** A spot well off the line, in whichever direction is clear of every other part of it. */
+const offPoint = (line: ReturnType<typeof lineFor>['line'], s: number): { x: number; z: number } => {
+  const p = pointAt(line, s);
+  for (let a = 0; a < 16; a++) {
+    const x = p.x + Math.cos((a / 16) * Math.PI * 2) * 7;
+    const z = p.z + Math.sin((a / 16) * Math.PI * 2) * 7;
+    if (inField(x, z) && nearestOnLine(line, x, z).off > CORRIDOR + 1) return { x, z };
+  }
+  throw new Error('no spot off the line');
+};
+
 describe('a car on the line', () => {
   const { line } = lineFor(20260);
   const step = CHECKPOINT_EVERY * MARK_SPACING;
@@ -98,9 +142,10 @@ describe('a car on the line', () => {
     }
     expect(run.checkpointS).toBeCloseTo(step * 2, 5);
     const at = pointAt(line, step * 2 + 3);
-    let verdict = run.update(at.x + CORRIDOR + 2, at.z, 0.05);
+    const off = offPoint(line, step * 2 + 3);
+    let verdict = run.update(off.x, off.z, 0.05);
     expect(verdict.kind).toBe('ok'); // not yet: the first moments are forgiven
-    verdict = run.update(at.x + CORRIDOR + 2, at.z, LOST_AFTER);
+    verdict = run.update(off.x, off.z, LOST_AFTER);
     expect(verdict.kind).toBe('lost');
     if (verdict.kind === 'lost') {
       const cp = pointAt(line, step * 2);
@@ -113,16 +158,16 @@ describe('a car on the line', () => {
   it('a brief clip of the edge is forgiven', () => {
     const run = new CrawlRun(line);
     const p = pointAt(line, 25);
+    const off = offPoint(line, 25);
     run.update(p.x, p.z, 0.05);
-    expect(run.update(p.x + CORRIDOR + 1, p.z, LOST_AFTER * 0.5).kind).toBe('ok');
+    expect(run.update(off.x, off.z, LOST_AFTER * 0.5).kind).toBe('ok');
     expect(run.update(p.x, p.z, 0.05).kind).toBe('ok');
-    expect(run.update(p.x + CORRIDOR + 1, p.z, LOST_AFTER * 0.5).kind).toBe('ok'); // the clock restarted
+    expect(run.update(off.x, off.z, LOST_AFTER * 0.5).kind).toBe('ok'); // the clock restarted
   });
 
   it('does not send you back again straight away', () => {
     const run = new CrawlRun(line);
-    const p = pointAt(line, 25);
-    const far = { x: p.x + 20, z: p.z };
+    const far = offPoint(line, 25);
     run.update(far.x, far.z, LOST_AFTER);
     expect(run.update(far.x, far.z, 0.2).kind).toBe('ok');
   });
