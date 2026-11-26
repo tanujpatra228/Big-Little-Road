@@ -404,6 +404,7 @@ async function boot(): Promise<void> {
     missions,
     crawl,
     scene,
+    boulders,
     get orbit() { return orbit; },
     spawn,
   };
