@@ -104,3 +104,22 @@ describe('adaptive send rate', () => {
     expect(nextPoseDelay(-5, PARK_AFTER_MS + 1)).toBe(100); // reversing counts as moving
   });
 });
+
+describe('toolbox frames', () => {
+  const parse = (o: unknown) => parseClientMessage(JSON.stringify(o));
+  it('accepts a drop and a pickup', () => {
+    expect(parse({ type: 'tool', op: 'drop', slot: 2, x: 300, z: -400, yaw: 500 })).toEqual({ type: 'tool', op: 'drop', slot: 2, x: 300, z: -400, yaw: 500 });
+    expect(parse({ type: 'tool', op: 'pickup', id: 'o12' })).toEqual({ type: 'tool', op: 'pickup', id: 'o12' });
+  });
+  it('rejects bad slots, positions, ids and ops', () => {
+    expect(parse({ type: 'tool', op: 'drop', slot: 6, x: 0, z: 0, yaw: 0 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'drop', slot: -1, x: 0, z: 0, yaw: 0 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'drop', slot: 1.5, x: 0, z: 0, yaw: 0 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'drop', slot: 1, x: 99999999, z: 0, yaw: 0 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'drop', slot: 1, x: 0, z: 0, yaw: 9000 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'drop', slot: 1, x: 'a', z: 0, yaw: 0 })).toBeNull();
+    expect(parse({ type: 'tool', op: 'pickup', id: '../x' })).toBeNull();
+    expect(parse({ type: 'tool', op: 'pickup' })).toBeNull();
+    expect(parse({ type: 'tool', op: 'nuke' })).toBeNull();
+  });
+});

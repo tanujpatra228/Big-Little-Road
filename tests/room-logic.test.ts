@@ -511,3 +511,113 @@ describe('goals', () => {
     expect(r.out).toEqual([]);
   });
 });
+
+describe('the crew toolbox in the room', () => {
+  const two = (): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb', 'hauler'), 0);
+    return room;
+  };
+  const tools = (r: Result, conn = 'c2'): Extract<ServerMsg, { type: 'tools' }>[] => to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'tools' }> => m.type === 'tools');
+  const drop = (slot: number, x = 300, z = 400): ClientMsg => ({ type: 'tool', op: 'drop', slot, x, z, yaw: 500 });
+
+  it('a new player is welcomed with the box and the yard', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    const r = room.hello('c3', hello('Cy', 'key-cccccccc', 'relay'), 20);
+    const w = to(r, 'c3').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.tools?.s).toBe('-bsscc');
+    expect(w.tools?.p).toHaveLength(1);
+  });
+
+  it('a drop is told to everyone, including the one who dropped it', () => {
+    const room = two();
+    const r = room.message('c1', drop(0), 10);
+    for (const conn of ['c1', 'c2']) {
+      const t = tools(r, conn);
+      expect(t).toHaveLength(1);
+      expect(t[0]).toMatchObject({ event: 'drop', by: 'p1', kind: 'beacon' });
+      expect(t[0]!.tools.p[0]).toMatchObject({ k: 'b', x: 300, z: 400, b: 'p1' });
+      expect(t[0]!.tools.s[0]).toBe('-');
+    }
+  });
+
+  it('another player can pick it up into the box', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    const id = room.tools.placed[0]!.id;
+    const r = room.message('c2', { type: 'tool', op: 'pickup', id }, 20);
+    expect(tools(r, 'c1')[0]).toMatchObject({ event: 'pickup', by: 'p2', kind: 'beacon' });
+    expect(room.tools.placed).toHaveLength(0);
+    expect(room.tools.slots[0]).toBe('beacon');
+  });
+
+  it('refuses, to the sender only, an empty slot, a missing item and a full yard', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    let r = room.message('c2', drop(0), 11);
+    expect(tools(r, 'c2')[0]).toMatchObject({ event: 'refused' });
+    expect(to(r, 'c1').filter((m) => m.type === 'tools')).toHaveLength(0);
+    r = room.message('c2', { type: 'tool', op: 'pickup', id: 'o99' }, 12);
+    expect(tools(r, 'c2')[0]).toMatchObject({ event: 'refused' });
+  });
+
+  it('a drop far from the car is refused once the room knows where the car is', () => {
+    const room = two();
+    room.message('c1', { ...pose, x: 0, z: 0 }, 5);
+    const r = room.message('c1', drop(0, 5000, 5000), 10);
+    expect(tools(r, 'c1')[0]).toMatchObject({ event: 'refused' });
+    expect(room.tools.placed).toHaveLength(0);
+    const near = room.message('c1', drop(0, 200, 100), 11);
+    expect(tools(near, 'c1')[0]).toMatchObject({ event: 'drop' });
+  });
+
+  it('picking up from across the yard is refused, nearby is fine', () => {
+    const room = two();
+    room.message('c1', drop(0, 200, 0), 10);
+    const id = room.tools.placed[0]!.id;
+    room.message('c2', { ...pose, x: 6000, z: 0 }, 11);
+    expect(tools(room.message('c2', { type: 'tool', op: 'pickup', id }, 12), 'c2')[0]).toMatchObject({ event: 'refused' });
+    room.message('c2', { ...pose, x: 400, z: 0 }, 13);
+    expect(tools(room.message('c2', { type: 'tool', op: 'pickup', id }, 14), 'c2')[0]).toMatchObject({ event: 'pickup' });
+  });
+
+  it('refuses a drop outside the yard', () => {
+    const room = two();
+    const r = room.message('c1', drop(0, 9500, 0), 10);
+    expect(tools(r, 'c1')[0]).toMatchObject({ event: 'refused' });
+  });
+
+  it('starting a mission gives a full box and an empty yard', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    const r = room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 20);
+    expect(tools(r, 'c2')[0]).toMatchObject({ event: 'reset' });
+    expect(room.tools.placed).toHaveLength(0);
+    expect(room.tools.slots.every(Boolean)).toBe(true);
+  });
+
+  it('survives a hibernation with the players still there', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    room.message('c1', drop(2), 11);
+    const back = RoomLogic.restore('ABCD', room.save(), ['c1', 'c2'], 100, room.saveProps(), room.saveRules(), room.saveMission(), room.saveTools());
+    expect(back.tools.placed).toHaveLength(2);
+    expect(back.tools.slots).toEqual(room.tools.slots);
+    expect(back.tools.next).toBe(room.tools.next);
+    const r = back.message('c2', { type: 'tool', op: 'pickup', id: back.tools.placed[0]!.id }, 101);
+    expect(tools(r, 'c1')[0]).toMatchObject({ event: 'pickup' });
+  });
+
+  it('an empty room hands the next group a fresh box', () => {
+    const room = two();
+    room.message('c1', drop(0), 10);
+    room.close('c1', 20);
+    room.close('c2', 21);
+    expect(room.tools.placed).toHaveLength(0);
+    expect(room.tools.slots.every(Boolean)).toBe(true);
+    const back = RoomLogic.restore('ABCD', [], [], 200, [], { signal: false }, null, { slots: [null, null, null, null, null, null], placed: [{ id: 'o1', kind: 'cone', x: 1, z: 1, yaw: 0, by: 'p1' }], next: 2 });
+    expect(back.tools.placed).toHaveLength(0);
+  });
+});

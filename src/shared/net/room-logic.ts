@@ -5,6 +5,7 @@ import { GOAL_COOLDOWN_MS, goalById } from '../goals';
 import { SharedBattery, toBatteryInfo } from '../battery';
 import { addReset, playerLeft, report, startMission, toInfo as missionToInfo, type MissionDef, type MissionEvent, type MissionInfo, type MissionState } from '../mission-logic';
 import { missionById } from '../missions';
+import { DROP_REACH, PICKUP_RANGE, REFUSALS, dropItem, newTools, pickUp, toWire, type Tools } from '../toolbox';
 
 /**
  * All room rules in one pure state machine: no sockets, no timers, no clock of its own.
@@ -30,6 +31,8 @@ export interface Player {
   tokens: number;
   lastRefill: number;
   violations: number;
+  /** Where this player's car last said it was (metres). Not saved: it is known again with the next pose. */
+  pos?: { x: number; z: number };
 }
 
 /** What survives a hibernation: rebuilt from storage when the room wakes. */
@@ -56,16 +59,19 @@ export class RoomLogic {
   rules: RoomRules = { signal: false };
   /** The mission being played, if any. Saved with the room so a hibernation does not lose it. */
   mission: MissionState | null = null;
+  /** The shared toolbox and what has been put down from it. Saved with the room. */
+  tools: Tools = newTools();
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
   constructor(readonly code: string) {}
 
-  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = [], rules: RoomRules = { signal: false }, mission: MissionState | null = null): RoomLogic {
+  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = [], rules: RoomRules = { signal: false }, mission: MissionState | null = null, tools: Tools | null = null): RoomLogic {
     const room = new RoomLogic(code);
     room.mission = mission && missionById(mission.id) ? mission : null;
     room.props = PropsLogic.restore(props);
     room.rules = { signal: !!rules.signal };
+    room.tools = tools && Array.isArray(tools.slots) && Array.isArray(tools.placed) ? { slots: [...tools.slots], placed: tools.placed.map((p) => ({ ...p })), next: tools.next } : newTools();
     const live = new Set(liveConns);
     for (const p of saved) {
       if (!live.has(p.conn)) continue; // their socket died while we slept
@@ -77,6 +83,7 @@ export class RoomLogic {
       if (room.mission.rulesBefore) room.rules = { ...room.mission.rulesBefore };
       room.mission = null;
     }
+    if (room.players.size === 0) room.tools = newTools(); // the next group starts with a full box and an empty yard
     return room;
   }
 
@@ -86,6 +93,10 @@ export class RoomLogic {
 
   saveMission(): MissionState | null {
     return this.mission ? { ...this.mission, progress: { ...this.mission.progress } } : null;
+  }
+
+  saveTools(): Tools {
+    return { slots: [...this.tools.slots], placed: this.tools.placed.map((p) => ({ ...p })), next: this.tools.next };
   }
 
   saveRules(): RoomRules {
@@ -138,7 +149,7 @@ export class RoomLogic {
 
   private welcomeAndJoin(p: Player, conn: string, now: number): Out[] {
     return [
-      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)), rules: { ...this.rules }, mission: this.missionInfo(now) } },
+      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)), rules: { ...this.rules }, mission: this.missionInfo(now), tools: toWire(this.tools) } },
       { to: { except: conn }, msg: { type: 'join', player: this.info(p) } },
     ];
   }
@@ -162,6 +173,7 @@ export class RoomLogic {
         return { out: [], close: [{ conn, reason: 'duplicate hello' }] };
       case 'pose': {
         const { type: _t, ...frame } = msg;
+        p.pos = { x: frame.x / 100, z: frame.z / 100 };
         return { out: [{ to: { except: conn }, msg: { type: 'pose', id: p.id, ...frame } }], close: [] };
       }
       case 'car':
@@ -190,6 +202,8 @@ export class RoomLogic {
       }
       case 'mission':
         return this.missionMessage(conn, p, msg, now);
+      case 'tool':
+        return this.toolMessage(conn, p, msg);
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -212,6 +226,32 @@ export class RoomLogic {
         return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
       }
     }
+  }
+
+  private toolsOut(event?: 'drop' | 'pickup' | 'reset' | 'refused', by?: string, kind?: string): Out {
+    return { to: 'all', msg: { type: 'tools', tools: toWire(this.tools), event, by, kind } };
+  }
+
+  private toolMessage(conn: string, p: Player, msg: Extract<ClientMsg, { type: 'tool' }>): Result {
+    const refuse = (reason: string): Result => ({ out: [{ to: { conn }, msg: { type: 'tools', tools: toWire(this.tools), event: 'refused', reason } }], close: [] });
+    if (msg.op === 'drop') {
+      const x = msg.x / 100;
+      const z = msg.z / 100;
+      if (Math.abs(x) > 90 || Math.abs(z) > 90) return refuse('That is outside the yard.');
+      // A drop must be near the car that makes it (checked when the room knows where the car is).
+      if (p.pos && Math.hypot(p.pos.x - x, p.pos.z - z) > DROP_REACH) return refuse('That is too far from your car.');
+      const r = dropItem(this.tools, msg.slot, { x, z, yaw: msg.yaw / 1000 }, p.id);
+      if ('error' in r) return refuse(REFUSALS[r.error]);
+      this.tools = r.tools;
+      return { out: [this.toolsOut('drop', p.id, r.placed.kind)], close: [] };
+    }
+    const item = this.tools.placed.find((o) => o.id === msg.id);
+    if (!item) return refuse(REFUSALS.unknown);
+    if (p.pos && Math.hypot(p.pos.x - item.x, p.pos.z - item.z) > PICKUP_RANGE + 3) return refuse('You are too far from it.');
+    const r = pickUp(this.tools, msg.id);
+    if ('error' in r) return refuse(REFUSALS[r.error]);
+    this.tools = r.tools;
+    return { out: [this.toolsOut('pickup', p.id, r.kind)], close: [] };
   }
 
   private playerIds(): string[] {
@@ -272,6 +312,9 @@ export class RoomLogic {
           if (changed) out.push({ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } });
         }
         if (changes) out.push({ to: 'all', msg: { type: 'rules', signal: this.rules.signal, by: p.id } });
+        // A full box and an empty yard, so every attempt begins the same way.
+        this.tools = newTools();
+        out.push(this.toolsOut('reset', p.id));
         out.push(this.missionOut(now, 'start', p.id));
         return { out, close: [] };
       }
@@ -309,6 +352,7 @@ export class RoomLogic {
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
     const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
+    if (this.players.size === 0) this.tools = newTools();
     // The mission goes on without them; an objective that needed everyone may now be met.
     const def = this.missionDef();
     if (this.mission && def) {

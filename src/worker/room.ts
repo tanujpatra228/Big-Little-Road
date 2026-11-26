@@ -4,6 +4,7 @@ import { RoomLogic, type Result, type SavedPlayer } from '../shared/net/room-log
 import type { PropState } from '../shared/net/props';
 import type { RoomRules } from '../shared/net/protocol';
 import type { MissionState } from '../shared/mission-logic';
+import type { Tools } from '../shared/toolbox';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -55,13 +56,14 @@ export class Room extends DurableObject<Env> {
     const props = (await this.ctx.storage.get<PropState[]>('props')) ?? [];
     const rules = (await this.ctx.storage.get<RoomRules>('rules')) ?? { signal: false };
     const mission = (await this.ctx.storage.get<MissionState>('mission')) ?? null;
-    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now(), props, rules, mission);
+    const tools = (await this.ctx.storage.get<Tools>('tools')) ?? null;
+    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now(), props, rules, mission, tools);
     return this.logic;
   }
 
   private async persist(): Promise<void> {
     if (!this.logic) return;
-    await this.ctx.storage.put({ players: this.logic.save(), props: this.logic.saveProps(), rules: this.logic.saveRules(), mission: this.logic.saveMission() });
+    await this.ctx.storage.put({ players: this.logic.save(), props: this.logic.saveProps(), rules: this.logic.saveRules(), mission: this.logic.saveMission(), tools: this.logic.saveTools() });
   }
 
   private dispatch(result: Result): void {
@@ -110,7 +112,7 @@ export class Room extends DurableObject<Env> {
     const now = Date.now();
     const result = msg.type === 'hello' ? logic.hello(att.conn, msg, now) : logic.message(att.conn, msg, now);
     this.dispatch(result);
-    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach' || msg.type === 'reset' || msg.type === 'rules' || msg.type === 'mission') await this.persist();
+    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach' || msg.type === 'reset' || msg.type === 'rules' || msg.type === 'mission' || msg.type === 'tool') await this.persist();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean): Promise<void> {

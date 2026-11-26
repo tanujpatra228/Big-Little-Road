@@ -3,6 +3,7 @@ import { MAX_FRAME_BYTES } from '../constants';
 import type { BatteryInfo } from '../battery';
 import type { MissionInfo } from '../mission-logic';
 import type { PropInfo } from './props';
+import type { ToolsInfo } from '../toolbox';
 
 /**
  * Wire protocol: small JSON frames, defined once, validated on arrival.
@@ -40,6 +41,9 @@ export type MissionNotice = 'start' | 'stage' | 'complete' | 'abort' | 'refused'
 
 const MISSION_ID = /^[a-z0-9-]{1,24}$/;
 
+/** What just happened to the toolbox, for sounds and toasts. */
+export type ToolNotice = 'drop' | 'pickup' | 'reset' | 'refused';
+
 /** Rules every player in a room shares. */
 export interface RoomRules {
   /** Radio range: cars lose control far from the base unless a Relay carries the signal. */
@@ -66,6 +70,9 @@ export type ClientMsg =
   | { type: 'mission'; op: 'abort' }
   | { type: 'mission'; op: 'reach' | 'flag'; obj: string }
   | { type: 'mission'; op: 'reset' }
+  /** The crew toolbox: drop what is in a slot at x, z (cm) facing yaw (mrad), or pick up a placed item. */
+  | { type: 'tool'; op: 'drop'; slot: number; x: number; z: number; yaw: number }
+  | { type: 'tool'; op: 'pickup'; id: string }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -77,7 +84,7 @@ export type ClientMsg =
   | { type: 'goal'; id: string };
 
 export type ServerMsg =
-  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo; rules?: RoomRules; mission?: MissionInfo | null }
+  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo; rules?: RoomRules; mission?: MissionInfo | null; tools?: ToolsInfo }
   | { type: 'join'; player: PlayerInfo }
   | { type: 'leave'; id: string }
   | ({ type: 'pose'; id: string } & PoseFrame)
@@ -93,6 +100,8 @@ export type ServerMsg =
   | { type: 'rules'; signal: boolean; by: string }
   /** The mission changed. `event` says what just happened; `mission` is null when none is running. */
   | { type: 'mission'; mission: MissionInfo | null; event?: MissionNotice; by?: string; reason?: string }
+  /** The toolbox or the placed items changed. Always the whole state: it is small and changes rarely. */
+  | { type: 'tools'; tools: ToolsInfo; event?: ToolNotice; by?: string; kind?: string; reason?: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -163,6 +172,14 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       if (m.op === 'reach' || m.op === 'flag') return typeof m.obj === 'string' && MISSION_ID.test(m.obj) ? { type: 'mission', op: m.op, obj: m.obj } : null;
       return null;
     }
+    case 'tool': {
+      if (m.op === 'pickup') return typeof m.id === 'string' && /^[a-z0-9]{1,12}$/.test(m.id) ? { type: 'tool', op: 'pickup', id: m.id } : null;
+      if (m.op === 'drop') {
+        if (!isInt(m.slot, 0, 5) || !isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.yaw, -7000, 7000)) return null;
+        return { type: 'tool', op: 'drop', slot: m.slot, x: m.x, z: m.z, yaw: m.yaw };
+      }
+      return null;
+    }
     case 'ping':
       if (!(PING_KINDS as readonly unknown[]).includes(m.kind)) return null;
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;
@@ -188,7 +205,7 @@ export const encode = (msg: ServerMsg | ClientMsg): string => JSON.stringify(msg
 
 /** Client side: parse what the server sent. Lenient on extra fields, strict on type. */
 export function parseServerMessage(text: unknown): ServerMsg | null {
-  if (typeof text !== 'string' || text.length > 4096) return null;
+  if (typeof text !== 'string' || text.length > 8192) return null;
   try {
     const o = JSON.parse(text) as { type?: string };
     return o && typeof o.type === 'string' ? (o as ServerMsg) : null;

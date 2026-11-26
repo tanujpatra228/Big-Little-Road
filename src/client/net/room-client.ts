@@ -2,13 +2,16 @@ import type { BatteryInfo } from '../../shared/battery';
 import type { MissionInfo } from '../../shared/mission-logic';
 import type { CarRole } from '../../shared/cars';
 import { quantizePose, type PoseState } from '../../shared/net/pose';
-import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame, type MissionNotice, type RoomRules } from '../../shared/net/protocol';
+import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame, type MissionNotice, type RoomRules, type ToolNotice } from '../../shared/net/protocol';
 import type { PropInfo } from '../../shared/net/props';
+import type { ToolsInfo } from '../../shared/toolbox';
 
 export type NetStatus = 'off' | 'connecting' | 'on' | 'reconnecting' | 'full' | 'failed';
 
 export interface RoomHandlers {
-  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[], battery?: BatteryInfo, rules?: RoomRules, mission?: MissionInfo | null): void;
+  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[], battery?: BatteryInfo, rules?: RoomRules, mission?: MissionInfo | null, tools?: ToolsInfo): void;
+  /** The toolbox or the placed items changed. `reason` says why a request was refused. */
+  tools(info: ToolsInfo, event: ToolNotice | undefined, by: string | undefined, kind: string | undefined, reason: string | undefined): void;
   /** The mission changed (or ended: null). `event` says what just happened, `reason` why a request was refused. */
   mission(info: MissionInfo | null, event: MissionNotice | undefined, by: string | undefined, reason: string | undefined): void;
   /** The room's rules changed (anyone can change them). */
@@ -170,7 +173,7 @@ export class RoomClient {
         this.selfId = msg.id;
         this.tries = 0;
         this.setStatus('on');
-        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? [], msg.battery, msg.rules, msg.mission);
+        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? [], msg.battery, msg.rules, msg.mission, msg.tools);
         break;
       case 'join':
         this.h.join(msg.player);
@@ -194,6 +197,9 @@ export class RoomClient {
         break;
       case 'mission':
         this.h.mission(msg.mission, msg.event, msg.by, msg.reason);
+        break;
+      case 'tools':
+        this.h.tools(msg.tools, msg.event, msg.by, msg.kind, msg.reason);
         break;
       case 'horn':
         this.h.horn(msg.id, msg.on);
@@ -241,6 +247,11 @@ export class RoomClient {
     if (op === 'start') this.send(encode({ type: 'mission', op, id: arg! }));
     else if (op === 'reach' || op === 'flag') this.send(encode({ type: 'mission', op, obj: arg! }));
     else this.send(encode({ type: 'mission', op }));
+  }
+
+  sendTool(m: { op: 'drop'; slot: number; x: number; z: number; yaw: number } | { op: 'pickup'; id: string }): void {
+    if (m.op === 'pickup') this.send(encode({ type: 'tool', op: 'pickup', id: m.id }));
+    else this.send(encode({ type: 'tool', op: 'drop', slot: m.slot, x: Math.round(m.x * 100), z: Math.round(m.z * 100), yaw: Math.round(m.yaw * 1000) }));
   }
 
   sendRules(signal: boolean): void {

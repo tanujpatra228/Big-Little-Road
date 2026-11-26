@@ -221,6 +221,39 @@ check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
   for (const x of [p, q]) try { x.close(); } catch {}
 }
 
+// ---- the crew toolbox, in a room of its own
+{
+  const tc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(tc, 'Tess'); await p.hello(); await sleep(250);
+  const q = new Client(tc, 'Uri'); await q.hello(); await sleep(250);
+  const w0 = p.of('welcome')[0]?.tools;
+  check('a new room welcomes you with a full box and an empty yard', w0?.s === 'bbsscc' && w0.p.length === 0, JSON.stringify(w0));
+  p.send({ type: 'pose', s: 1, t: 1, x: 0, y: 50, z: 0, qx: 0, qy: 0, qz: 0, qw: 10000, v: 0, st: 0 }); await sleep(200);
+  p.send({ type: 'tool', op: 'drop', slot: 0, x: 300, z: 400, yaw: 500 }); await sleep(300);
+  check('a drop is told to both players', p.of('tools').some((m) => m.event === 'drop' && m.kind === 'beacon' && m.tools.p.length === 1) && q.of('tools').some((m) => m.event === 'drop' && m.by === 'p1'));
+  p.send({ type: 'tool', op: 'drop', slot: 0, x: 300, z: 400, yaw: 500 }); await sleep(250);
+  check('dropping from the same empty slot again is refused, to the sender only', p.of('tools').some((m) => m.event === 'refused') && !q.of('tools').some((m) => m.event === 'refused'));
+  p.send({ type: 'tool', op: 'drop', slot: 1, x: 8000, z: 8000, yaw: 0 }); await sleep(250);
+  check('a drop far from the car is refused', p.of('tools').filter((m) => m.event === 'refused').length === 2);
+  p.send({ type: 'tool', op: 'drop', slot: 4, x: 100, z: 100, yaw: 0 }); await sleep(250);
+  check('a second item can go down', q.of('tools').filter((m) => m.event === 'drop').length === 2);
+
+  // Hibernation: what is in the yard and what is in the box must still be there when the room wakes.
+  await sleep(14000);
+  const late = new Client(tc, 'Val'); await late.hello(); await sleep(400);
+  const lt = late.of('welcome')[0]?.tools;
+  check('after the room has slept, a late joiner finds the box and the yard as they were', lt?.s === '-bss-c' && lt.p.length === 2 && lt.n === 3, JSON.stringify(lt));
+  const id = lt?.p.find((o) => o.k === 'b')?.i;
+  q.send({ type: 'pose', s: 1, t: 1, x: 300, y: 50, z: 400, qx: 0, qy: 0, qz: 0, qw: 10000, v: 0, st: 0 }); await sleep(200);
+  q.send({ type: 'tool', op: 'pickup', id }); await sleep(300);
+  check('and the other player can pick it up from where the room stands', p.of('tools').some((m) => m.event === 'pickup' && m.by === 'p2' && m.tools.s[0] === 'b' && m.tools.p.length === 1));
+  late.close(); await sleep(200);
+  p.send({ type: 'mission', op: 'start', id: 'terrace' }); await sleep(300);
+  check('starting a mission refills the box and clears the yard', q.of('tools').some((m) => m.event === 'reset' && m.tools.s === 'bbsscc' && m.tools.p.length === 0));
+  p.send({ type: 'mission', op: 'abort' }); await sleep(200);
+  for (const x of [p, q]) try { x.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

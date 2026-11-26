@@ -33,6 +33,9 @@ import { buildTerrace } from './render/terrace';
 import { Fireworks } from './render/fireworks';
 import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
 import { CrawlController } from './game/crawl';
+import { ToolsController } from './game/tools';
+import { PlacedObjects } from './render/placed-objects';
+import { ToolboxBar } from './ui/toolbox-bar';
 import { hasLowRange } from '../shared/gear';
 import { nextPoseDelay } from '../shared/net/pose';
 import { ROOM_CODE, type PlayerInfo } from '../shared/net/protocol';
@@ -186,8 +189,9 @@ async function boot(): Promise<void> {
   };
   const net: RoomClient = new RoomClient(
     {
-      welcome(id, code, list, props, bat, rules, mission) {
+      welcome(id, code, list, props, bat, rules, mission, toolsInfo) {
         tether.onWelcome(props);
+        toolsCtl.receive(toolsInfo);
         missions.onWelcome(mission, performance.now());
         applySignalRule(rules?.signal ?? false);
         if (bat) battery.receive(bat, performance.now());
@@ -265,6 +269,9 @@ async function boot(): Promise<void> {
         missions.onMessage(info, event, by, reason, performance.now());
         refreshPanel();
       },
+      tools(info, event, by, kind, reason) {
+        toolsCtl.receive(info, event, by, kind, reason);
+      },
       rules(on, by) {
         applySignalRule(on);
         const who = by === net.selfId ? 'You' : roster.get(by)?.name ?? 'Someone';
@@ -275,6 +282,7 @@ async function boot(): Promise<void> {
         if (net.status === 'off') {
           applySignalRule(false);
           missions.onWelcome(null, performance.now());
+          toolsCtl.reset();
         }
         if (net.status === 'off') {
           tether.onOffline();
@@ -321,6 +329,17 @@ async function boot(): Promise<void> {
     nameOf: (id) => roster.get(id)?.name ?? 'A teammate',
     audio,
   });
+  const placedObjects = new PlacedObjects(scene, terrain);
+  const toolsCtl: ToolsController = new ToolsController({
+    net: () => net,
+    selfId: () => (net.status === 'on' ? net.selfId : 'me'),
+    vehicle: () => vehicle,
+    toast: (title, sub, ms) => hud.toast(title, sub, ms),
+    nameOf: (id) => roster.get(id)?.name ?? 'A teammate',
+    audio,
+    onChange: () => placedObjects.sync(toolsCtl.placed),
+  });
+  const toolbar = new ToolboxBar((slot) => toolsCtl.select(slot), (slot) => String(slot + 4));
   const crawl = new CrawlController({
     scene,
     terrain,
@@ -403,6 +422,8 @@ async function boot(): Promise<void> {
     rescue,
     missions,
     crawl,
+    tools: toolsCtl,
+    placedObjects,
     scene,
     boulders,
     get orbit() { return orbit; },
@@ -445,6 +466,9 @@ async function boot(): Promise<void> {
       if (!hasLowRange(role)) hud.toast('No low range', 'The Hauler and the Relay have it. Press 2 or 3.', 2200);
       else hud.toast(vehicle.toggleGear() === 'low' ? 'Low range' : 'High range', vehicle.gear === 'low' ? 'Slow and strong: for picking your way through rocks' : 'Full speed', 1600);
     }
+    for (let i = 0; i < 6; i++) if (input.wasPressed(`Digit${i + 4}`)) toolsCtl.select(i);
+    if (input.wasPressed('KeyE')) toolsCtl.drop();
+    if (input.wasPressed('KeyX')) toolsCtl.pickUp();
     if (input.wasPressed('KeyF')) tether.toggle();
     if (input.wasPressed('KeyT')) tether.requestReset();
     const rope = tether.update();
@@ -466,7 +490,9 @@ async function boot(): Promise<void> {
     }
     terrace.update(now / 1000, Math.max(0, Math.min(1, (celebrateUntil - performance.now()) / 2000)));
     fireworks.update(frame);
-    hud.setPrompt(tether.prompt ?? crawl.warn);
+    hud.setPrompt(tether.prompt ?? crawl.warn ?? toolsCtl.prompt());
+    toolbar.update(toolsCtl.tools.slots, toolsCtl.selected);
+    placedObjects.update(frame);
     hud.setGear(hasLowRange(role) ? (vehicle.gear === 'low' ? 'LOW RANGE (G)' : 'HIGH RANGE (G for low)') : null, vehicle.gear === 'low');
 
     if (input.jumpPressed() && !signal.cutOff) vehicle.requestJump();

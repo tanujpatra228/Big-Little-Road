@@ -184,5 +184,6 @@ Follow section 0b. Right now:
 1. **Step 0:** done on my side: the two-player playtest kit (`docs/playtest-2p.md`), the real-server checks running in CI before every deploy, and rescue-not-reset built and verified. Waiting on you: run the kit (the plank gate needs two humans) and send the F3 numbers.
 2. **Step 1:** built (`docs/features/missions.md`): the mission runtime with the Terrace as mission 1.
 3. **Step 2:** built and verified in two browsers (`docs/features/rock-crawl.md`): Rock Crawl with split vision and low range.
-4. **Step 3:** placeable objects and the toolbox.
+4. **Step 3:** built, verifying in two browsers (`docs/features/toolbox.md`): placeable objects and the toolbox.
+5. **Step 4:** Dead Signal (beacons, Relay top-up, radio mission).
 3. Check the Big Little Road domain and trademark conflicts before any public asset ships (human, step 10 at the latest).
