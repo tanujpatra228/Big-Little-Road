@@ -9,6 +9,18 @@ const pose = (over: Partial<PoseFrame> = {}): string =>
 describe('frame validation', () => {
   it('accepts a good pose and a good hello', () => {
     expect(parseClientMessage(pose())).toMatchObject({ type: 'pose', x: 120 });
+    const m = (o: object): unknown => parseClientMessage(JSON.stringify({ type: 'mission', ...o }));
+    expect(m({ op: 'start', id: 'terrace' })).toEqual({ type: 'mission', op: 'start', id: 'terrace' });
+    expect(m({ op: 'abort' })).toEqual({ type: 'mission', op: 'abort' });
+    expect(m({ op: 'reset' })).toEqual({ type: 'mission', op: 'reset' });
+    expect(m({ op: 'reach', obj: 'reach-terrace' })).toEqual({ type: 'mission', op: 'reach', obj: 'reach-terrace' });
+    expect(m({ op: 'flag', obj: 'plank-held' })).toEqual({ type: 'mission', op: 'flag', obj: 'plank-held' });
+    expect(m({ op: 'start' })).toBeNull();
+    expect(m({ op: 'start', id: 'Has Spaces' })).toBeNull();
+    expect(m({ op: 'start', id: 'x'.repeat(40) })).toBeNull();
+    expect(m({ op: 'flag', obj: 5 })).toBeNull();
+    expect(m({ op: 'explode' })).toBeNull();
+    expect(m({})).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'rules', signal: true }))).toEqual({ type: 'rules', signal: true });
     expect(parseClientMessage(JSON.stringify({ type: 'rules', signal: 'yes' }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'rules' }))).toBeNull();

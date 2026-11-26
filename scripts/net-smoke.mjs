@@ -182,6 +182,45 @@ check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
   for (const x of [p, q, late]) try { x.close(); } catch {}
 }
 
+// ---- missions, in a room of their own
+{
+  const mc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(mc, 'Mia'); await p.hello(); await sleep(250);
+  check('a new room has no mission in the welcome', p.of('welcome')[0]?.mission === null);
+  p.send({ type: 'mission', op: 'start', id: 'terrace' }); await sleep(300);
+  check('a crew that is too small is told no, and no mission starts', p.of('mission').some((m) => m.event === 'refused' && /needs 2 players/.test(m.reason ?? '')) && !p.of('mission').some((m) => m.event === 'start'));
+  const q = new Client(mc, 'Noa'); await q.hello(); await sleep(250);
+  p.send({ type: 'mission', op: 'start', id: 'nope' }); await sleep(250);
+  check('an unknown mission is refused', p.of('mission').filter((m) => m.event === 'refused').length === 2);
+  p.send({ type: 'mission', op: 'start', id: 'terrace' }); await sleep(300);
+  check('two players can start it, and both are told', p.of('mission').some((m) => m.event === 'start' && m.mission?.stage === 0) && q.of('mission').some((m) => m.event === 'start' && m.by === 'p1'));
+  q.send({ type: 'mission', op: 'start', id: 'terrace' }); await sleep(250);
+  check('a second start while one runs is refused', q.of('mission').some((m) => m.event === 'refused' && /already running/.test(m.reason ?? '')));
+  q.send({ type: 'mission', op: 'reach', obj: 'plank-held' }); await sleep(200); // wrong kind: ignored
+  q.send({ type: 'mission', op: 'flag', obj: 'plank-ramp' }); await sleep(200); // wrong stage: ignored
+  check('reports for the wrong kind or stage change nothing', !p.of('mission').some((m) => m.event === 'stage'));
+  q.send({ type: 'mission', op: 'flag', obj: 'plank-held' }); await sleep(300);
+  check('a correct report moves both players to stage 2', p.of('mission').some((m) => m.event === 'stage' && m.mission.stage === 1) && q.of('mission').some((m) => m.event === 'stage' && m.mission.stage === 1));
+
+  // Hibernation: the mission must still be there, at the same stage, with its clock running, when the room wakes.
+  await sleep(14000);
+  const late = new Client(mc, 'Pia'); await late.hello(); await sleep(400);
+  const lm = late.of('welcome')[0]?.mission;
+  check('after the room has slept, a late joiner finds the mission at stage 2 with the clock running', lm?.id === 'terrace' && lm.stage === 1 && lm.elapsedMs > 13000, JSON.stringify(lm));
+  late.close(); await sleep(200);
+  p.send({ type: 'mission', op: 'flag', obj: 'plank-ramp' }); await sleep(300);
+  check('and it can still be played on from there', p.of('mission').some((m) => m.event === 'stage' && m.mission.stage === 2));
+  p.send({ type: 'mission', op: 'reset' }); await sleep(200);
+  q.send({ type: 'mission', op: 'reach', obj: 'reach-terrace' }); await sleep(300);
+  const fin = p.of('mission').find((m) => m.event === 'complete');
+  check('finishing is announced with the time and the stars (fast but one reset: two stars)', fin?.mission?.status === 'complete' && fin.mission.stars === 2 && fin.mission.resets === 1 && fin.mission.elapsedMs > 14000, JSON.stringify(fin?.mission));
+  p.send({ type: 'mission', op: 'start', id: 'terrace' }); await sleep(300);
+  check('a finished mission can be started again', p.of('mission').filter((m) => m.event === 'start').length === 2);
+  p.send({ type: 'mission', op: 'abort' }); await sleep(250);
+  check('ending it tells everyone there is no mission', q.of('mission').some((m) => m.event === 'abort' && m.mission === null));
+  for (const x of [p, q]) try { x.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

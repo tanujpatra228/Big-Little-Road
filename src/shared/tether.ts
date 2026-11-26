@@ -247,3 +247,15 @@ export function snapRamp(pose: PlankPose, platform: { x: number; z: number; r: n
   const centreR = platform.r - 0.4 + PLANK.length / 2;
   return { x: platform.x - toCentre.x * centreR, z: platform.z - toCentre.z * centreR, yaw: Math.atan2(toCentre.x, toCentre.z) };
 }
+
+/**
+ * True when a plank at rest lies exactly where `snapRamp` would put it: it has been set down as the
+ * ramp against the platform wall. (Letting go near the wall snaps it there, so a plank set down
+ * properly passes, and one left lying anywhere else does not.)
+ */
+export function isRampPose(pose: PlankPose, platform: { x: number; z: number; r: number } = PLATFORM): boolean {
+  const snapped = snapRamp(pose, platform);
+  if (!snapped) return false;
+  const dyaw = Math.abs(Math.atan2(Math.sin(pose.yaw - snapped.yaw), Math.cos(pose.yaw - snapped.yaw)));
+  return hypot(pose.x - snapped.x, pose.z - snapped.z) < 0.35 && dyaw < 0.2;
+}

@@ -1,13 +1,16 @@
 import type { BatteryInfo } from '../../shared/battery';
+import type { MissionInfo } from '../../shared/mission-logic';
 import type { CarRole } from '../../shared/cars';
 import { quantizePose, type PoseState } from '../../shared/net/pose';
-import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame, type RoomRules } from '../../shared/net/protocol';
+import { encode, parseServerMessage, type PingKind, type PlayerInfo, type PoseFrame, type MissionNotice, type RoomRules } from '../../shared/net/protocol';
 import type { PropInfo } from '../../shared/net/props';
 
 export type NetStatus = 'off' | 'connecting' | 'on' | 'reconnecting' | 'full' | 'failed';
 
 export interface RoomHandlers {
-  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[], battery?: BatteryInfo, rules?: RoomRules): void;
+  welcome(id: string, code: string, players: PlayerInfo[], props: PropInfo[], battery?: BatteryInfo, rules?: RoomRules, mission?: MissionInfo | null): void;
+  /** The mission changed (or ended: null). `event` says what just happened, `reason` why a request was refused. */
+  mission(info: MissionInfo | null, event: MissionNotice | undefined, by: string | undefined, reason: string | undefined): void;
   /** The room's rules changed (anyone can change them). */
   rules(signal: boolean, by: string): void;
   /** The team battery changed. */
@@ -167,7 +170,7 @@ export class RoomClient {
         this.selfId = msg.id;
         this.tries = 0;
         this.setStatus('on');
-        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? [], msg.battery, msg.rules);
+        this.h.welcome(msg.id, msg.code, msg.players, msg.props ?? [], msg.battery, msg.rules, msg.mission);
         break;
       case 'join':
         this.h.join(msg.player);
@@ -188,6 +191,9 @@ export class RoomClient {
         break;
       case 'rules':
         this.h.rules(msg.signal, msg.by);
+        break;
+      case 'mission':
+        this.h.mission(msg.mission, msg.event, msg.by, msg.reason);
         break;
       case 'horn':
         this.h.horn(msg.id, msg.on);
@@ -226,6 +232,15 @@ export class RoomClient {
 
   sendCar(role: CarRole): void {
     this.send(encode({ type: 'car', role }));
+  }
+
+  sendMission(op: 'start', id: string): void;
+  sendMission(op: 'abort' | 'reset'): void;
+  sendMission(op: 'reach' | 'flag', obj: string): void;
+  sendMission(op: 'start' | 'abort' | 'reset' | 'reach' | 'flag', arg?: string): void {
+    if (op === 'start') this.send(encode({ type: 'mission', op, id: arg! }));
+    else if (op === 'reach' || op === 'flag') this.send(encode({ type: 'mission', op, obj: arg! }));
+    else this.send(encode({ type: 'mission', op }));
   }
 
   sendRules(signal: boolean): void {

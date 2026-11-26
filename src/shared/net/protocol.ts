@@ -1,6 +1,7 @@
 import { CAR_ORDER, type CarRole } from '../cars';
 import { MAX_FRAME_BYTES } from '../constants';
 import type { BatteryInfo } from '../battery';
+import type { MissionInfo } from '../mission-logic';
 import type { PropInfo } from './props';
 
 /**
@@ -34,6 +35,11 @@ export interface PoseFrame {
   st: number;
 }
 
+/** What just happened to the mission, for toasts and fanfares. */
+export type MissionNotice = 'start' | 'stage' | 'complete' | 'abort' | 'refused';
+
+const MISSION_ID = /^[a-z0-9-]{1,24}$/;
+
 /** Rules every player in a room shares. */
 export interface RoomRules {
   /** Radio range: cars lose control far from the base unless a Relay carries the signal. */
@@ -55,6 +61,11 @@ export type ClientMsg =
   | { type: 'nitro'; on: boolean }
   /** Turn the room's radio range (signal web) on or off for everyone. */
   | { type: 'rules'; signal: boolean }
+  /** Mission control: start one, abort it, or report that an objective was met (or that a car had to be reset). */
+  | { type: 'mission'; op: 'start'; id: string }
+  | { type: 'mission'; op: 'abort' }
+  | { type: 'mission'; op: 'reach' | 'flag'; obj: string }
+  | { type: 'mission'; op: 'reset' }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -66,7 +77,7 @@ export type ClientMsg =
   | { type: 'goal'; id: string };
 
 export type ServerMsg =
-  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo; rules?: RoomRules }
+  | { type: 'welcome'; id: string; code: string; max: number; players: PlayerInfo[]; props: PropInfo[]; battery?: BatteryInfo; rules?: RoomRules; mission?: MissionInfo | null }
   | { type: 'join'; player: PlayerInfo }
   | { type: 'leave'; id: string }
   | ({ type: 'pose'; id: string } & PoseFrame)
@@ -80,6 +91,8 @@ export type ServerMsg =
   | { type: 'battery'; battery: BatteryInfo }
   /** The room's rules changed; `by` is who changed them. */
   | { type: 'rules'; signal: boolean; by: string }
+  /** The mission changed. `event` says what just happened; `mission` is null when none is running. */
+  | { type: 'mission'; mission: MissionInfo | null; event?: MissionNotice; by?: string; reason?: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -144,6 +157,12 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       return typeof m.on === 'boolean' ? { type: 'nitro', on: m.on } : null;
     case 'rules':
       return typeof m.signal === 'boolean' ? { type: 'rules', signal: m.signal } : null;
+    case 'mission': {
+      if (m.op === 'abort' || m.op === 'reset') return { type: 'mission', op: m.op };
+      if (m.op === 'start') return typeof m.id === 'string' && MISSION_ID.test(m.id) ? { type: 'mission', op: 'start', id: m.id } : null;
+      if (m.op === 'reach' || m.op === 'flag') return typeof m.obj === 'string' && MISSION_ID.test(m.obj) ? { type: 'mission', op: m.op, obj: m.obj } : null;
+      return null;
+    }
     case 'ping':
       if (!(PING_KINDS as readonly unknown[]).includes(m.kind)) return null;
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;

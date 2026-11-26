@@ -1,8 +1,10 @@
 import type { CarRole } from '../cars';
-import { MAX_PLAYERS, type ClientMsg, type PlayerInfo, type RoomRules, type ServerMsg } from './protocol';
+import { MAX_PLAYERS, type ClientMsg, type MissionNotice, type PlayerInfo, type RoomRules, type ServerMsg } from './protocol';
 import { PropsLogic, toInfo, type PropState } from './props';
 import { GOAL_COOLDOWN_MS, goalById } from '../goals';
 import { SharedBattery, toBatteryInfo } from '../battery';
+import { addReset, playerLeft, report, startMission, toInfo as missionToInfo, type MissionDef, type MissionEvent, type MissionInfo, type MissionState } from '../mission-logic';
+import { missionById } from '../missions';
 
 /**
  * All room rules in one pure state machine: no sockets, no timers, no clock of its own.
@@ -52,13 +54,16 @@ export class RoomLogic {
   private lastNow = 0;
   /** Rules the whole room shares. Saved with the room: a room that slept must still remember what everyone agreed. */
   rules: RoomRules = { signal: false };
+  /** The mission being played, if any. Saved with the room so a hibernation does not lose it. */
+  mission: MissionState | null = null;
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
   constructor(readonly code: string) {}
 
-  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = [], rules: RoomRules = { signal: false }): RoomLogic {
+  static restore(code: string, saved: SavedPlayer[], liveConns: Iterable<string>, now: number, props: PropState[] = [], rules: RoomRules = { signal: false }, mission: MissionState | null = null): RoomLogic {
     const room = new RoomLogic(code);
+    room.mission = mission && missionById(mission.id) ? mission : null;
     room.props = PropsLogic.restore(props);
     room.rules = { signal: !!rules.signal };
     const live = new Set(liveConns);
@@ -66,11 +71,21 @@ export class RoomLogic {
       if (!live.has(p.conn)) continue; // their socket died while we slept
       room.players.set(p.id, { ...p, tokens: BUCKET, lastRefill: now, violations: 0 });
     }
+    // Nobody is left from the group that started it: do not hand the next group a half-finished mission,
+    // and put back any rules it had changed.
+    if (room.players.size === 0 && room.mission) {
+      if (room.mission.rulesBefore) room.rules = { ...room.mission.rulesBefore };
+      room.mission = null;
+    }
     return room;
   }
 
   save(): SavedPlayer[] {
     return [...this.players.values()].map(({ id, name, role, key, conn }) => ({ id, name, role, key, conn }));
+  }
+
+  saveMission(): MissionState | null {
+    return this.mission ? { ...this.mission, progress: { ...this.mission.progress } } : null;
   }
 
   saveRules(): RoomRules {
@@ -123,7 +138,7 @@ export class RoomLogic {
 
   private welcomeAndJoin(p: Player, conn: string, now: number): Out[] {
     return [
-      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)), rules: { ...this.rules } } },
+      { to: { conn }, msg: { type: 'welcome', id: p.id, code: this.code, max: MAX_PLAYERS, players: [...this.players.values()].map((q) => this.info(q)), props: [...this.props.props.values()].map(toInfo), battery: toBatteryInfo(this.battery.snapshot(now)), rules: { ...this.rules }, mission: this.missionInfo(now) } },
       { to: { except: conn }, msg: { type: 'join', player: this.info(p) } },
     ];
   }
@@ -173,6 +188,8 @@ export class RoomLogic {
         this.rules = { ...this.rules, signal: msg.signal };
         return { out: [{ to: 'all', msg: { type: 'rules', signal: msg.signal, by: p.id } }], close: [] };
       }
+      case 'mission':
+        return this.missionMessage(conn, p, msg, now);
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -197,6 +214,91 @@ export class RoomLogic {
     }
   }
 
+  private playerIds(): string[] {
+    return [...this.players.keys()];
+  }
+
+  private missionDef(): MissionDef | undefined {
+    return this.mission ? missionById(this.mission.id) : undefined;
+  }
+
+  /** The mission as everyone is told about it, or null when there is none. */
+  missionInfo(now: number): MissionInfo | null {
+    const def = this.missionDef();
+    return this.mission && def ? missionToInfo(def, this.mission, now, this.playerIds()) : null;
+  }
+
+  private missionOut(now: number, event?: MissionNotice, by?: string): Out {
+    return { to: 'all', msg: { type: 'mission', mission: this.missionInfo(now), event, by } };
+  }
+
+  /** Puts the room rules back the way they were before the mission changed them. */
+  private restoreRules(): Out[] {
+    const before = this.mission?.rulesBefore;
+    if (!before) return [];
+    this.rules = { ...before };
+    return [{ to: 'all', msg: { type: 'rules', signal: this.rules.signal, by: this.mission!.startedBy } }];
+  }
+
+  /** The events a change produced, as messages: a stage moved on, or the mission was completed (rules go back). */
+  private missionEvents(events: MissionEvent[], now: number, by: string): Out[] {
+    const out: Out[] = [];
+    if (events.includes('complete')) {
+      out.push(this.missionOut(now, 'complete', by));
+      out.push(...this.restoreRules());
+    } else if (events.includes('stage')) out.push(this.missionOut(now, 'stage', by));
+    else out.push(this.missionOut(now));
+    return out;
+  }
+
+  private missionMessage(conn: string, p: Player, msg: Extract<ClientMsg, { type: 'mission' }>, now: number): Result {
+    const refuse = (reason: string): Result => ({ out: [{ to: { conn }, msg: { type: 'mission', mission: this.missionInfo(now), event: 'refused', reason } }], close: [] });
+    switch (msg.op) {
+      case 'start': {
+        const def = missionById(msg.id);
+        if (!def) return refuse('There is no such mission.');
+        if (this.mission?.status === 'running') return refuse('A mission is already running.');
+        if (this.players.size < def.minPlayers) return refuse(`${def.name} needs ${def.minPlayers} players.`);
+        const out: Out[] = [];
+        // The mission may need its own rules (restored when it ends).
+        const changes = def.rules && Object.entries(def.rules).some(([k, v]) => this.rules[k as keyof RoomRules] !== v);
+        const before = changes ? { ...this.rules } : null;
+        if (def.rules) this.rules = { ...this.rules, ...def.rules };
+        this.mission = startMission(def, now, p.id, before);
+        // Props that nobody holds go back to where they start, so every attempt begins the same way.
+        for (const prop of this.props.props.values()) {
+          if (prop.holders[0] || prop.holders[1]) continue;
+          const changed = this.props.reset(prop.id);
+          if (changed) out.push({ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } });
+        }
+        if (changes) out.push({ to: 'all', msg: { type: 'rules', signal: this.rules.signal, by: p.id } });
+        out.push(this.missionOut(now, 'start', p.id));
+        return { out, close: [] };
+      }
+      case 'abort': {
+        if (!this.mission) return none();
+        const out = this.restoreRules();
+        this.mission = null;
+        out.push({ to: 'all', msg: { type: 'mission', mission: null, event: 'abort', by: p.id } });
+        return { out, close: [] };
+      }
+      case 'reset': {
+        if (!this.mission || this.mission.status !== 'running') return none();
+        this.mission = addReset(this.mission);
+        return { out: [this.missionOut(now)], close: [] };
+      }
+      case 'reach':
+      case 'flag': {
+        const def = this.missionDef();
+        if (!this.mission || !def) return none();
+        const r = report(def, this.mission, p.id, msg.obj, msg.op, this.playerIds(), now, p.role);
+        if (!r.changed) return none();
+        this.mission = r.state;
+        return { out: this.missionEvents(r.events, now, p.id), close: [] };
+      }
+    }
+  }
+
   private batteryOut(now: number): Out {
     return { to: 'all', msg: { type: 'battery', battery: toBatteryInfo(this.battery.snapshot(now)) } };
   }
@@ -207,6 +309,19 @@ export class RoomLogic {
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
     const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
+    // The mission goes on without them; an objective that needed everyone may now be met.
+    const def = this.missionDef();
+    if (this.mission && def) {
+      if (this.players.size === 0) {
+        // Nobody left: the next group should not walk into a half-finished mission.
+        out.push(...this.restoreRules());
+        this.mission = null;
+      } else {
+        const r = playerLeft(def, this.mission, p.id, this.playerIds(), this.lastNow);
+        this.mission = r.state;
+        if (r.changed) out.push(...this.missionEvents(r.events, this.lastNow, p.id));
+      }
+    }
     // A car that leaves stops draining the team battery.
     if (this.battery.isBoosting(p.id)) {
       this.battery.stop(p.id, now);

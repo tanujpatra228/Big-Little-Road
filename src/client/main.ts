@@ -11,6 +11,10 @@ import { ChaseCam } from './render/chase-cam';
 import { OrbitCam } from './render/orbit-cam';
 import { BatteryView } from '../shared/battery';
 import { RescueController } from './game/rescue';
+import { MissionController } from './game/missions';
+import { MissionPanel } from './ui/mission-panel';
+import { MISSIONS } from '../shared/missions';
+import { isRampPose } from '../shared/tether';
 import { SignalController } from './game/signal';
 import { PerfPanel } from './ui/perf-panel';
 import { AutoQualityController } from './game/auto-quality';
@@ -150,7 +154,15 @@ async function boot(): Promise<void> {
   let signalRule = false;
   const refreshPanel = (): void => {
     const players: PanelPlayer[] = [...roster.values()].map((p) => ({ ...p, self: p.id === net.selfId, rtt: p.id === net.selfId ? net.rttMs : 0 }));
-    panel.render({ status: net.status, code: net.code, max: 4, players, lag: net.lagMs, signal: signalRule });
+    panel.render({
+      status: net.status,
+      code: net.code,
+      max: 4,
+      players,
+      lag: net.lagMs,
+      signal: signalRule,
+      missions: { list: MISSIONS.map((m) => ({ id: m.id, name: m.name, minPlayers: m.minPlayers })), running: missions.running ? missions.info!.id : null },
+    });
   };
   const addRemote = (p: PlayerInfo): void => {
     roster.set(p.id, p);
@@ -172,8 +184,9 @@ async function boot(): Promise<void> {
   };
   const net: RoomClient = new RoomClient(
     {
-      welcome(id, code, list, props, bat, rules) {
+      welcome(id, code, list, props, bat, rules, mission) {
         tether.onWelcome(props);
+        missions.onWelcome(mission, performance.now());
         applySignalRule(rules?.signal ?? false);
         if (bat) battery.receive(bat, performance.now());
         else battery.reset();
@@ -246,6 +259,10 @@ async function boot(): Promise<void> {
       battery(info) {
         battery.receive(info, performance.now());
       },
+      mission(info, event, by, reason) {
+        missions.onMessage(info, event, by, reason, performance.now());
+        refreshPanel();
+      },
       rules(on, by) {
         applySignalRule(on);
         const who = by === net.selfId ? 'You' : roster.get(by)?.name ?? 'Someone';
@@ -253,7 +270,10 @@ async function boot(): Promise<void> {
       },
       status() {
         if (net.status !== 'on') battery.reset(); // out of the room: back to the personal tank
-        if (net.status === 'off') applySignalRule(false);
+        if (net.status === 'off') {
+          applySignalRule(false);
+          missions.onWelcome(null, performance.now());
+        }
         if (net.status === 'off') {
           tether.onOffline();
           for (const r of remotes.values()) r.dispose();
@@ -285,6 +305,21 @@ async function boot(): Promise<void> {
       if (net.status === 'on') pings.send('tow', performance.now());
     },
   });
+  const missions = new MissionController({
+    net: () => net,
+    selfId: () => (net.status === 'on' ? net.selfId : 'me'),
+    vehicle: () => vehicle,
+    flags: {
+      // The Terrace: both ends of the plank hooked, then the plank set down as the ramp against the wall.
+      'plank-held': () => tether.plank.state.holders.every(Boolean),
+      'plank-ramp': () => !tether.plank.state.holders[0] && !tether.plank.state.holders[1] && isRampPose(tether.plank.state.pose),
+    },
+    celebrate: (goalId, who) => celebrate(goalId, who),
+    toast: (title, sub, ms) => hud.toast(title, sub, ms),
+    nameOf: (id) => roster.get(id)?.name ?? 'A teammate',
+    audio,
+  });
+  const missionPanel = new MissionPanel();
   const applySignalRule = (on: boolean): void => {
     signalRule = on;
     signal.setEnabled(on);
@@ -310,6 +345,12 @@ async function boot(): Promise<void> {
       } catch {
         panel.render({ status: 'failed', code: '', max: 4, players: [] });
       }
+    },
+    startMission(id) {
+      missions.start(id);
+    },
+    abortMission() {
+      missions.abort();
     },
     setSignal(on) {
       if (net.status === 'on') net.sendRules(on); // the room tells everyone, us included
@@ -348,6 +389,7 @@ async function boot(): Promise<void> {
     battery,
     signal,
     rescue,
+    missions,
     get orbit() { return orbit; },
     spawn,
   };
@@ -366,7 +408,10 @@ async function boot(): Promise<void> {
     });
     if (params.has('debug') && input.wasPressed('KeyK')) vehicle.debugFlip();
     if (input.wasPressed('KeyR')) {
-      if (vehicle.flippedFor >= FLIP_RESET_SECONDS || params.has('debug') || params.has('tune')) vehicle.resetUpright();
+      if (vehicle.flippedFor >= FLIP_RESET_SECONDS || params.has('debug') || params.has('tune')) {
+        vehicle.resetUpright();
+        missions.reportReset();
+      }
     }
 
     // Other players' cars first, so their solid stand-ins and hitches are current for this frame.
@@ -387,11 +432,13 @@ async function boot(): Promise<void> {
     pings.update(performance.now(), frame);
     signal.update(frame);
     rescue.update(frame);
+    missions.update(performance.now());
+    missionPanel.update(missions.view(performance.now()), performance.now(), missions.completedAt);
     hud.rescueText = rescue.text;
     hud.setSignal(signal.enabled ? { strength: signal.strength, quality: signal.quality, lag: signal.lag } : null);
     // Reached a goal? Online the room announces it to everyone; alone we celebrate straight away.
     const here = vehicle.body.translation();
-    for (const g of GOALS) {
+    for (const g of missions.running ? [] : GOALS) {
       if (!reached(g, here.x, here.y, here.z) || performance.now() - (goalFiredAt.get(g.id) ?? -1e9) < GOAL_COOLDOWN_MS) continue;
       goalFiredAt.set(g.id, performance.now());
       if (net.status === 'on') net.sendGoal(g.id);

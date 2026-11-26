@@ -3,6 +3,7 @@ import { encode, parseClientMessage, ROOM_CODE } from '../shared/net/protocol';
 import { RoomLogic, type Result, type SavedPlayer } from '../shared/net/room-logic';
 import type { PropState } from '../shared/net/props';
 import type { RoomRules } from '../shared/net/protocol';
+import type { MissionState } from '../shared/mission-logic';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -53,13 +54,14 @@ export class Room extends DurableObject<Env> {
     const live = this.ctx.getWebSockets().map((ws) => (ws.deserializeAttachment() as Attachment | null)?.conn ?? '');
     const props = (await this.ctx.storage.get<PropState[]>('props')) ?? [];
     const rules = (await this.ctx.storage.get<RoomRules>('rules')) ?? { signal: false };
-    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now(), props, rules);
+    const mission = (await this.ctx.storage.get<MissionState>('mission')) ?? null;
+    this.logic = RoomLogic.restore(storedCode, saved, live, Date.now(), props, rules, mission);
     return this.logic;
   }
 
   private async persist(): Promise<void> {
     if (!this.logic) return;
-    await this.ctx.storage.put({ players: this.logic.save(), props: this.logic.saveProps(), rules: this.logic.saveRules() });
+    await this.ctx.storage.put({ players: this.logic.save(), props: this.logic.saveProps(), rules: this.logic.saveRules(), mission: this.logic.saveMission() });
   }
 
   private dispatch(result: Result): void {
@@ -108,7 +110,7 @@ export class Room extends DurableObject<Env> {
     const now = Date.now();
     const result = msg.type === 'hello' ? logic.hello(att.conn, msg, now) : logic.message(att.conn, msg, now);
     this.dispatch(result);
-    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach' || msg.type === 'reset' || msg.type === 'rules') await this.persist();
+    if (msg.type === 'hello' || msg.type === 'car' || msg.type === 'attach' || msg.type === 'detach' || msg.type === 'reset' || msg.type === 'rules' || msg.type === 'mission') await this.persist();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean): Promise<void> {

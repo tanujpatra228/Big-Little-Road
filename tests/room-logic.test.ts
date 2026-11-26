@@ -293,3 +293,203 @@ describe('the room rules survive a hibernation', () => {
     expect(RoomLogic.restore('ABCD', [], [], 0).rules.signal).toBe(false);
   });
 });
+
+import { MISSIONS } from '../src/shared/missions';
+import type { MissionDef } from '../src/shared/mission-logic';
+
+describe('missions in the room', () => {
+  const missionMsgs = (r: Result, conn: string): Array<Extract<ServerMsg, { type: 'mission' }>> =>
+    to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'mission' }> => m.type === 'mission');
+  const crew = (n = 2): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    for (let i = 1; i <= n; i++) room.hello(`c${i}`, hello(`P${i}`, `key-${i}${i}${i}${i}${i}${i}${i}${i}`), 0);
+    return room;
+  };
+
+  it('a new room has no mission, and says so in the welcome', () => {
+    const room = new RoomLogic('ABCD');
+    const w = to(room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0), 'c1').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.mission).toBeNull();
+  });
+
+  it('starting tells everyone, with who started it and the first stage', () => {
+    const room = crew();
+    const r = room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 1000);
+    const m = missionMsgs(r, 'c2')[0]!;
+    expect(m.event).toBe('start');
+    expect(m.by).toBe('p1');
+    expect(m.mission).toMatchObject({ id: 'terrace', status: 'running', stage: 0, elapsedMs: 0, resets: 0 });
+    expect(missionMsgs(r, 'c1')).toHaveLength(1); // the starter hears it too
+  });
+
+  it('is refused, to the asker only, when the mission does not exist, one is running, or the crew is too small', () => {
+    const room = crew(1);
+    let r = room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    expect(r.out).toHaveLength(1);
+    expect(r.out[0]!.to).toEqual({ conn: 'c1' });
+    expect(missionMsgs(r, 'c1')[0]).toMatchObject({ event: 'refused', reason: 'The Terrace needs 2 players.' });
+    expect(room.mission).toBeNull();
+
+    const two = crew();
+    expect(missionMsgs(two.message('c1', { type: 'mission', op: 'start', id: 'nope' }, 0), 'c1')[0]!.event).toBe('refused');
+    two.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    r = two.message('c2', { type: 'mission', op: 'start', id: 'terrace' }, 100);
+    expect(missionMsgs(r, 'c2')[0]).toMatchObject({ event: 'refused', reason: 'A mission is already running.' });
+  });
+
+  it('reports move it along: a stage event, then the final one with stars from the room clock', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 1000);
+    let r = room.message('c2', { type: 'mission', op: 'flag', obj: 'plank-held' }, 21000);
+    expect(missionMsgs(r, 'c1')[0]).toMatchObject({ event: 'stage', mission: { stage: 1, elapsedMs: 20000 } });
+    r = room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-ramp' }, 61000);
+    expect(missionMsgs(r, 'c2')[0]!.event).toBe('stage');
+    r = room.message('c2', { type: 'mission', op: 'reach', obj: 'reach-terrace' }, 101000);
+    const done = missionMsgs(r, 'c1')[0]!;
+    expect(done.event).toBe('complete');
+    expect(done.by).toBe('p2');
+    expect(done.mission).toMatchObject({ status: 'complete', elapsedMs: 100000, stars: 3 });
+  });
+
+  it('a slow or reset-ridden run earns fewer stars', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    room.message('c1', { type: 'mission', op: 'reset' }, 1000);
+    room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-held' }, 5000);
+    room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-ramp' }, 6000);
+    const r = room.message('c1', { type: 'mission', op: 'reach', obj: 'reach-terrace' }, 999000);
+    expect(missionMsgs(r, 'c2')[0]!.mission).toMatchObject({ status: 'complete', resets: 1, stars: 1 });
+  });
+
+  it('ignores reports for the wrong stage, the wrong kind, an unknown id, or when no mission runs', () => {
+    const room = crew();
+    expect(room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-held' }, 0).out).toHaveLength(0); // none running
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    expect(room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-ramp' }, 10).out).toHaveLength(0); // later stage
+    expect(room.message('c1', { type: 'mission', op: 'reach', obj: 'plank-held' }, 10).out).toHaveLength(0); // wrong kind
+    expect(room.message('c1', { type: 'mission', op: 'flag', obj: 'zzz' }, 10).out).toHaveLength(0);
+    expect(room.message('c1', { type: 'mission', op: 'reset' }, 10).out).toHaveLength(1); // a reset is real news
+  });
+
+  it('abort ends it for everyone, and a new one can start', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    const r = room.message('c2', { type: 'mission', op: 'abort' }, 50);
+    expect(missionMsgs(r, 'c1')[0]).toMatchObject({ mission: null, event: 'abort', by: 'p2' });
+    expect(room.mission).toBeNull();
+    expect(missionMsgs(room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 60), 'c1')[0]!.event).toBe('start');
+    expect(room.message('c1', { type: 'mission', op: 'abort' }, 70).out).toHaveLength(1);
+    expect(room.message('c1', { type: 'mission', op: 'abort' }, 80).out).toHaveLength(0); // nothing to abort
+  });
+
+  it('starting puts the plank back where it started, unless a car is holding it', () => {
+    const room = crew();
+    room.message('c1', { type: 'attach', prop: 'plank1', end: 0 }, 0);
+    room.message('c1', { type: 'detach', x: 5000, z: 5000, yaw: 100 }, 10); // set down somewhere else
+    const r = room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 20);
+    const prop = to(r, 'c2').find((m) => m.type === 'prop') as Extract<ServerMsg, { type: 'prop' }>;
+    expect(prop.prop).toMatchObject({ id: 'plank1', h0: '', h1: '' });
+    expect(prop.prop.x).not.toBe(5000);
+
+    const held = crew();
+    held.message('c1', { type: 'attach', prop: 'plank1', end: 0 }, 0);
+    expect(to(held.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 20), 'c2').some((m) => m.type === 'prop')).toBe(false);
+  });
+
+  it('a late joiner is told where the mission is', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    room.message('c1', { type: 'mission', op: 'flag', obj: 'plank-held' }, 5000);
+    const w = to(room.hello('c3', hello('Cy', 'key-cccccccc'), 8000), 'c3').find((m) => m.type === 'welcome') as Extract<ServerMsg, { type: 'welcome' }>;
+    expect(w.mission).toMatchObject({ id: 'terrace', status: 'running', stage: 1, elapsedMs: 8000 });
+  });
+
+  it('survives a hibernation: the stage and the running clock are restored', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 1000);
+    room.message('c2', { type: 'mission', op: 'flag', obj: 'plank-held' }, 4000);
+    const woke = RoomLogic.restore('ABCD', room.save(), ['c1', 'c2'], 30000, room.saveProps(), room.saveRules(), room.saveMission());
+    expect(woke.missionInfo(30000)).toMatchObject({ id: 'terrace', status: 'running', stage: 1, elapsedMs: 29000 });
+    const r = woke.message('c1', { type: 'mission', op: 'flag', obj: 'plank-ramp' }, 31000);
+    expect(missionMsgs(r, 'c2')[0]!.event).toBe('stage');
+  });
+
+  it('a room that wakes with nobody left from the group does not keep their mission', () => {
+    const room = crew();
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    const woke = RoomLogic.restore('ABCD', room.save(), [], 99999, room.saveProps(), room.saveRules(), room.saveMission());
+    expect(woke.mission).toBeNull();
+  });
+
+  it('the last player leaving ends it; others leaving does not', () => {
+    const room = crew(3);
+    room.message('c1', { type: 'mission', op: 'start', id: 'terrace' }, 0);
+    room.close('c3', 100);
+    expect(room.mission).not.toBeNull();
+    room.close('c2', 200);
+    expect(room.mission).not.toBeNull();
+    room.close('c1', 300);
+    expect(room.mission).toBeNull();
+  });
+
+  describe('a mission that needs its own rules, and everyone to reach', () => {
+    const TEST: MissionDef = {
+      id: 'radio-test',
+      name: 'Radio test',
+      blurb: '',
+      minPlayers: 1,
+      rules: { signal: true },
+      parSeconds: 100,
+      stages: [{ id: 's', title: 'S', objectives: [{ id: 'all-reach', kind: 'reach', goal: 'terrace', who: 'all', text: 'all' }] }],
+    };
+    const withTest = (fn: () => void): void => {
+      (MISSIONS as MissionDef[]).push(TEST);
+      try {
+        fn();
+      } finally {
+        (MISSIONS as MissionDef[]).pop();
+      }
+    };
+
+    it('switches radio range on while it runs and puts it back after, whether it is completed or aborted', () => {
+      withTest(() => {
+        const room = crew();
+        const start = room.message('c1', { type: 'mission', op: 'start', id: 'radio-test' }, 0);
+        expect(to(start, 'c2').some((m) => m.type === 'rules' && m.signal)).toBe(true);
+        expect(room.rules.signal).toBe(true);
+        room.message('c1', { type: 'mission', op: 'reach', obj: 'all-reach' }, 100);
+        const done = room.message('c2', { type: 'mission', op: 'reach', obj: 'all-reach' }, 200);
+        expect(missionMsgs(done, 'c1')[0]!.event).toBe('complete');
+        expect(to(done, 'c1').some((m) => m.type === 'rules' && !m.signal)).toBe(true);
+        expect(room.rules.signal).toBe(false);
+
+        room.message('c1', { type: 'mission', op: 'start', id: 'radio-test' }, 300);
+        expect(room.rules.signal).toBe(true);
+        room.message('c1', { type: 'mission', op: 'abort' }, 400);
+        expect(room.rules.signal).toBe(false);
+      });
+    });
+
+    it('does not touch a rule the room already had on', () => {
+      withTest(() => {
+        const room = crew();
+        room.message('c1', { type: 'rules', signal: true }, 0);
+        const r = room.message('c1', { type: 'mission', op: 'start', id: 'radio-test' }, 10);
+        expect(to(r, 'c2').some((m) => m.type === 'rules')).toBe(false);
+        room.message('c1', { type: 'mission', op: 'abort' }, 20);
+        expect(room.rules.signal).toBe(true);
+      });
+    });
+
+    it('a player leaving can complete an objective that needed everyone', () => {
+      withTest(() => {
+        const room = crew();
+        room.message('c1', { type: 'mission', op: 'start', id: 'radio-test' }, 0);
+        room.message('c1', { type: 'mission', op: 'reach', obj: 'all-reach' }, 100);
+        const r = room.close('c2', 500);
+        expect(r.out.some((o) => o.msg.type === 'mission' && o.msg.event === 'complete')).toBe(true);
+        expect(room.mission?.status).toBe('complete');
+      });
+    });
+  });
+});

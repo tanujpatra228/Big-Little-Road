@@ -182,5 +182,6 @@ Do not cut: ping wheel, shared battery, signal web, join-in-10-seconds flow. The
 Follow section 0b. Right now:
 
 1. **Step 0:** done on my side: the two-player playtest kit (`docs/playtest-2p.md`), the real-server checks running in CI before every deploy, and rescue-not-reset built and verified. Waiting on you: run the kit (the plank gate needs two humans) and send the F3 numbers.
-2. **Step 1:** the mission runtime, starting with its pure state machine and the Terrace as mission 1.
+2. **Step 1:** built (`docs/features/missions.md`): the mission runtime with the Terrace as mission 1.
+2b. **Step 2:** Rock Crawl with split vision and low-range gear.
 3. Check the Big Little Road domain and trademark conflicts before any public asset ships (human, step 10 at the latest).

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEADBAND, HARD_SQUEEZE, HARD_STRETCH, LEASH_MAX_ACCEL, PLANK, RAMP_SNAP_ANGLE, REST_SPACING, ROPE_MAX_ACCEL, carriedPose, forward, hitchPoint, hitchToward, nearestFreeEnd,
-  plankEnds, ropeAccel, ropeLeash, ropeTension, snapRamp, trailFarEnd, trailingPose, type PlankPose, type Vec2,
+  plankEnds, ropeAccel, ropeLeash, ropeTension, snapRamp, isRampPose, trailFarEnd, trailingPose, type PlankPose, type Vec2,
 } from '../src/shared/tether';
+import { PLATFORM } from '../src/shared/terrain';
 
 const near = (a: number, b: number, tol = 1e-6): void => expect(Math.abs(a - b)).toBeLessThan(tol);
 
@@ -332,5 +333,29 @@ describe('hard limit (the plank does not stretch)', () => {
       max = Math.max(max, a.x + REST_SPACING);
     }
     expect(max).toBeLessThan(LIMIT + 0.15);
+  });
+});
+
+
+describe('isRampPose (the plank is set down as the ramp)', () => {
+  const rough: PlankPose = { x: PLATFORM.x - 11.2, z: PLATFORM.z + 1, yaw: Math.PI / 2 + 0.3 };
+
+  it('is true for exactly the pose letting go would snap to, and survives the wire rounding', () => {
+    const snapped = snapRamp(rough)!;
+    expect(isRampPose(snapped)).toBe(true);
+    const rounded = { x: Math.round(snapped.x * 100) / 100, z: Math.round(snapped.z * 100) / 100, yaw: Math.round(snapped.yaw * 1000) / 1000 };
+    expect(isRampPose(rounded)).toBe(true);
+  });
+
+  it('is false for a plank left lying where it was carried, near the wall but not set as the ramp', () => {
+    expect(isRampPose(rough)).toBe(false);
+  });
+
+  it('is false for the plank at its start, anywhere far from the wall, and for the wrong heading', () => {
+    expect(isRampPose({ x: 17, z: -6, yaw: 0.55 })).toBe(false);
+    expect(isRampPose({ x: -30, z: 30, yaw: 1 })).toBe(false);
+    const snapped = snapRamp(rough)!;
+    expect(isRampPose({ ...snapped, yaw: snapped.yaw + 0.6 })).toBe(false);
+    expect(isRampPose({ ...snapped, x: snapped.x + 1 })).toBe(false);
   });
 });

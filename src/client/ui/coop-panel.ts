@@ -18,6 +18,8 @@ export interface PanelState {
   lag?: number;
   /** Radio range (signal web) is on. */
   signal?: boolean;
+  /** The missions on offer, and which one is running (its id), if any. */
+  missions?: { list: Array<{ id: string; name: string; minPlayers: number }>; running: string | null };
 }
 
 const NAME_KEY = 'blr-name';
@@ -38,7 +40,7 @@ export class CoopPanel {
   private nameValue = defaultName();
   private rttEl: HTMLElement | null = null;
 
-  constructor(private readonly actions: { start(): void; leave(): void; setSignal(on: boolean): void }) {
+  constructor(private readonly actions: { start(): void; leave(): void; setSignal(on: boolean): void; startMission(id: string): void; abortMission(): void }) {
     const css = document.createElement('style');
     css.textContent = `
       .coop{position:fixed;top:36px;right:14px;width:230px;font:13px/1.4 system-ui,sans-serif;color:#fff;background:#10151cb8;border:1px solid #ffffff22;border-radius:12px;padding:10px 12px;text-shadow:none;backdrop-filter:blur(6px)}
@@ -52,6 +54,10 @@ export class CoopPanel {
       .coop .dot{width:10px;height:10px;border-radius:50%}
       .coop .rtt{margin-left:auto;opacity:.7;font-size:12px}
       .coop .note{opacity:.75;font-size:12px}
+      .coop .missions{margin:8px 0 2px;border-top:1px solid #ffffff22;padding-top:6px}
+      .coop .missions b{display:block;margin-bottom:4px}
+      .coop .missions button{display:block;width:100%;text-align:left}
+      .coop .missions button:disabled{opacity:.45;cursor:default}
       .coop label.rule{display:flex;align-items:center;gap:8px;margin:8px 0 2px;cursor:pointer}
       .coop label.rule input{width:auto;margin:0}
     `;
@@ -151,6 +157,26 @@ export class CoopPanel {
       list.append(li);
     }
     root.append(list, el('div', `${s.players.length} of ${s.max} drivers`, 'note'), this.signalRow(s));
+    if (s.missions) {
+      const box = el('div', '', 'missions');
+      box.append(el('b', 'Missions'));
+      const running = s.missions.list.find((m) => m.id === s.missions!.running);
+      if (running) {
+        box.append(el('div', `Running: ${running.name}`, 'note'));
+        const abort = el('button', 'End the mission', 'ghost');
+        abort.addEventListener('click', () => this.actions.abortMission());
+        box.append(abort);
+      } else {
+        for (const m of s.missions.list) {
+          const need = s.players.length < m.minPlayers;
+          const b = el('button', need ? `${m.name} (needs ${m.minPlayers} players)` : `Start: ${m.name}`);
+          b.disabled = need;
+          b.addEventListener('click', () => this.actions.startMission(m.id));
+          box.append(b);
+        }
+      }
+      root.append(box);
+    }
     if (s.lag) root.append(el('div', `Simulated lag: ${s.lag} ms each way`, 'note'));
   }
 }
