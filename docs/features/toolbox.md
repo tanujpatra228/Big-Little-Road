@@ -29,7 +29,7 @@ A drop or a pick up is one incoming message (1/20 of a free-plan request) plus o
 - `tests/toolbox.test.ts` (14): drop and pick up rules, immutability, ids never reused, the 24 limit, nearest in reach, wire round trip and junk input.
 - Room (10) and protocol checks: welcome carries the state, drops reach everyone, pick up by another player, refusals go to the sender only, distance checks once the room knows the car, outside the yard, a mission start refills, hibernation keeps it, an empty room resets.
 - Real worker (`scripts/net-smoke.mjs`, runs in CI): a late joiner after the room has slept finds the same box and yard, and a pick up still works.
-- Browsers: see the run notes in the commit.
+- Browsers (solo, then two players on a real worker): alone, key 5 then E puts the second slot's beacon down and X takes it back; in a room, A drops a beacon and a cone, B sees both drawn and a toast, B drives next to the beacon and sees "X: pick up the beacon", picks it up, A sees it vanish and the box refill; far from everything X says there is nothing to pick up. Each player keeps their own selected slot.
 
 ## Not done
 
