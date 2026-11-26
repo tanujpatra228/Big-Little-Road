@@ -201,7 +201,7 @@ export class RoomLogic {
         return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
       }
       case 'goal': {
-        if (!goalById(msg.id)) return none();
+        if (!goalById(msg.id) || goalById(msg.id)?.missionOnly) return none(); // mission goals are reported through the mission
         const last = this.goalAt.get(msg.id);
         if (last !== undefined && now - last < GOAL_COOLDOWN_MS) return none();
         this.goalAt.set(msg.id, now);

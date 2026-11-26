@@ -15,6 +15,7 @@ export class Hud {
   private readonly nitroBar = document.createElement('div');
   private readonly nitroFill = document.createElement('i');
   private readonly nitroLabel = document.createElement('div');
+  private readonly gearBox = document.createElement('div');
   private readonly signalBox = document.createElement('div');
   private readonly signalBars: HTMLElement[] = [];
   private readonly signalText = document.createElement('span');
@@ -55,6 +56,8 @@ export class Hud {
       .hud .signal.lost{--sc:#ff5a4d}
       .hud .signal.lost .txt{animation:sigblink .8s steps(2) infinite}
       @keyframes sigblink{50%{opacity:.35}}
+      .hud .gear{position:absolute;left:20px;bottom:190px;display:none;font-size:11px;font-weight:700;letter-spacing:.05em;background:#000a;padding:3px 10px;border-radius:999px;border:1px solid #fff4}
+      .hud .gear.low{border-color:#ffd23f;color:#ffd23f}
       .hud .nitrolabel{position:absolute;left:20px;bottom:142px;font-size:11px;font-weight:600;letter-spacing:.04em;opacity:.9;display:none}
       .hud .nitro.run i{background:linear-gradient(90deg,#ffd23f,#fff3b0)}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
@@ -74,6 +77,7 @@ export class Hud {
     this.nitroBar.title = 'Nitro (Shift)';
     this.nitroBar.append(this.nitroFill);
     this.nitroLabel.className = 'nitrolabel';
+    this.gearBox.className = 'gear';
     this.signalBox.className = 'signal';
     const bars = document.createElement('span');
     bars.className = 'bars';
@@ -87,7 +91,7 @@ export class Hud {
     this.signalBox.append(bars, this.signalText);
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; G low range (Hauler, Relay) &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;
@@ -95,7 +99,7 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel, this.signalBox);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel, this.signalBox, this.gearBox);
     document.body.appendChild(this.root);
   }
 
@@ -110,6 +114,15 @@ export class Hud {
     this.toastEl.classList.add('show');
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), ms);
+  }
+
+  /** The gear badge: null hides it (the Scout has no low range). */
+  setGear(text: string | null, low = false): void {
+    this.gearBox.style.display = text ? 'block' : 'none';
+    if (text) {
+      this.gearBox.textContent = text;
+      this.gearBox.classList.toggle('low', low);
+    }
   }
 
   /** A contextual action hint near the bottom of the screen, or hidden when null. */

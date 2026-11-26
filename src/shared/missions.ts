@@ -30,6 +30,26 @@ export const MISSIONS: readonly MissionDef[] = [
       },
     ],
   },
+  {
+    id: 'rockcrawl',
+    name: 'Rock Crawl',
+    blurb: 'A field of boulders and a dust cloud. Only the Scout can see the safe line; the Hauler has to be talked through it in low range.',
+    minPlayers: 2,
+    parSeconds: 300,
+    celebrate: 'rock-far',
+    stages: [
+      {
+        id: 'gate',
+        title: 'Meet at the gate',
+        objectives: [{ id: 'reach-gate', kind: 'reach', goal: 'rock-gate', who: 'all', text: 'Both cars at the Rock Field gate (west of the house). Scout in the lead, Hauler behind.' }],
+      },
+      {
+        id: 'crawl',
+        title: 'Cross the rocks',
+        objectives: [{ id: 'reach-far', kind: 'reach', goal: 'rock-far', who: 'all', text: 'Both cars through to the far side. Stray off the glowing line and you go back to the last checkpoint. Hauler: G is low range.' }],
+      },
+    ],
+  },
 ];
 
 export function missionById(id: string): MissionDef | undefined {

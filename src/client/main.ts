@@ -32,6 +32,8 @@ import { PingController } from './game/pings';
 import { buildTerrace } from './render/terrace';
 import { Fireworks } from './render/fireworks';
 import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
+import { CrawlController } from './game/crawl';
+import { hasLowRange } from '../shared/gear';
 import { nextPoseDelay } from '../shared/net/pose';
 import { ROOM_CODE, type PlayerInfo } from '../shared/net/protocol';
 import { TunePanel } from './ui/tune-panel';
@@ -289,8 +291,8 @@ async function boot(): Promise<void> {
   const celebrate = (id: string, who: string): void => {
     const g = goalById(id);
     if (!g) return;
-    celebrateUntil = performance.now() + 12000;
-    fireworks.launch(new THREE.Vector3(g.x, g.minY, g.z));
+    if (!g.missionOnly) celebrateUntil = performance.now() + 12000; // the terrace's own glow
+    fireworks.launch(new THREE.Vector3(g.x, g.missionOnly ? terrain.heightAt(g.x, g.z) + 1 : g.minY, g.z));
     audio.fanfare();
     hud.toast(`${g.name} reached!`, who);
   };
@@ -318,6 +320,16 @@ async function boot(): Promise<void> {
     toast: (title, sub, ms) => hud.toast(title, sub, ms),
     nameOf: (id) => roster.get(id)?.name ?? 'A teammate',
     audio,
+  });
+  const crawl = new CrawlController({
+    scene,
+    terrain,
+    boulders,
+    role: () => role,
+    vehicle: () => vehicle,
+    mission: () => ({ active: missions.running && missions.info?.id === 'rockcrawl', stage: missions.info?.stage ?? 0 }),
+    toast: (title, sub, ms) => hud.toast(title, sub, ms),
+    onLost: () => missions.reportReset(),
   });
   const missionPanel = new MissionPanel();
   const applySignalRule = (on: boolean): void => {
@@ -390,6 +402,8 @@ async function boot(): Promise<void> {
     signal,
     rescue,
     missions,
+    crawl,
+    scene,
     get orbit() { return orbit; },
     spawn,
   };
@@ -426,6 +440,10 @@ async function boot(): Promise<void> {
         hud.toast('Orbit camera', 'Drag to look around, wheel to zoom, V to go back', 3200);
       }
     }
+    if (input.wasPressed('KeyG')) {
+      if (!hasLowRange(role)) hud.toast('No low range', 'The Hauler and the Relay have it. Press 2 or 3.', 2200);
+      else hud.toast(vehicle.toggleGear() === 'low' ? 'Low range' : 'High range', vehicle.gear === 'low' ? 'Slow and strong: for picking your way through rocks' : 'Full speed', 1600);
+    }
     if (input.wasPressed('KeyF')) tether.toggle();
     if (input.wasPressed('KeyT')) tether.requestReset();
     const rope = tether.update();
@@ -433,12 +451,13 @@ async function boot(): Promise<void> {
     signal.update(frame);
     rescue.update(frame);
     missions.update(performance.now());
+    crawl.update(frame);
     missionPanel.update(missions.view(performance.now()), performance.now(), missions.completedAt);
     hud.rescueText = rescue.text;
     hud.setSignal(signal.enabled ? { strength: signal.strength, quality: signal.quality, lag: signal.lag } : null);
     // Reached a goal? Online the room announces it to everyone; alone we celebrate straight away.
     const here = vehicle.body.translation();
-    for (const g of missions.running ? [] : GOALS) {
+    for (const g of missions.running ? [] : GOALS.filter((x) => !x.missionOnly)) {
       if (!reached(g, here.x, here.y, here.z) || performance.now() - (goalFiredAt.get(g.id) ?? -1e9) < GOAL_COOLDOWN_MS) continue;
       goalFiredAt.set(g.id, performance.now());
       if (net.status === 'on') net.sendGoal(g.id);
@@ -446,7 +465,8 @@ async function boot(): Promise<void> {
     }
     terrace.update(now / 1000, Math.max(0, Math.min(1, (celebrateUntil - performance.now()) / 2000)));
     fireworks.update(frame);
-    hud.setPrompt(tether.prompt);
+    hud.setPrompt(tether.prompt ?? crawl.warn);
+    hud.setGear(hasLowRange(role) ? (vehicle.gear === 'low' ? 'LOW RANGE (G)' : 'HIGH RANGE (G for low)') : null, vehicle.gear === 'low');
 
     if (input.jumpPressed() && !signal.cutOff) vehicle.requestJump();
     let steps = 0;

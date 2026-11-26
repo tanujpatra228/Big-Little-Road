@@ -12,6 +12,7 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 - [Car abilities](car-abilities.md): plan for drift, jump and nitro on all cars, with per-car tuning, guard rails, controls and order of work.
 - [Rescue, not reset](rescue.md): a flipped car pings the team, and a teammate who drives up rolls it back over; why plain pushing was not enough.
 - [Mission runtime](missions.md): data-driven missions run by the room, persisted, with a shared checklist, clock and stars; the Terrace is mission 1.
+- [Rock Crawl, split vision and low range](rock-crawl.md): the Scout sees the safe line through the rocks, the Hauler is in the dust and in low range; wandering off sends you back to a checkpoint.
 - [Signal web](signal-web.md): radio range from the base and Relay trucks, lag, failsafe, the room switch, and the hibernation bug it found.
 - [Shared battery](shared-battery.md): one team power meter in a room that boosting drains, run-dry lockout, how it is kept without timers.
 - [Performance](performance.md): what costs frames (grass, terrain, effects), what changed, automatic quality, the F3 panel, next levers.

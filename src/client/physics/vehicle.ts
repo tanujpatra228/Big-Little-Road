@@ -4,6 +4,7 @@ import type { CarSpec } from '../../shared/cars';
 import { resolveSurface, Surface } from '../../shared/surfaces';
 import { impactFromDelta, type Impact } from '../../shared/audio-model';
 import { NitroTank, boostFactor } from '../../shared/nitro';
+import { gearFactors, toggleGear, type Gear } from '../../shared/gear';
 import { RIGHTED_AT, rollRate } from '../../shared/rescue';
 import { JumpState, airLevel, jumpImpulse, jumpSpeed } from '../../shared/jump';
 import type { PhysicsWorld } from './world';
@@ -94,6 +95,8 @@ export class Vehicle {
   readonly nitro = new NitroTank();
   /** In a room, where to read the team battery from; null while playing alone. Kept across a car switch. */
   nitroSource: (() => { level: number; locked: boolean } | null) | null = null;
+  /** High or low range. Only the Hauler and Relay can really be in low (see shared/gear.ts). Reset to high on a car change. */
+  gear: Gear = 'high';
   /** Set on the step a hop fires; the game reads it once to play the sound. */
   private hopped = false;
   /** Seconds left of gentle over-speed drag after turning into another car, so momentum carries over. */
@@ -177,18 +180,19 @@ export class Vehicle {
       speedFrac += spec.surfaceSpeed[s] / WHEELS;
     }
 
-    const target = steerAngle(input.steer, fwdSpeed, spec.maxSteer, spec.steerFalloffSpeed);
+    const gear = gearFactors(spec.role, this.gear);
+    const target = steerAngle(input.steer, fwdSpeed, spec.maxSteer * gear.steer, spec.steerFalloffSpeed);
     this.steerCmd = approach(this.steerCmd, target, 3.2, dt);
     // Nitro: held key plus throttle, drawn from the personal tank.
     const wantBoost = !!input.nitro && input.throttle > 0.02 && fwdSpeed > -0.5;
     const boost = boostFactor(this.nitro.update(wantBoost, dt, this.nitroSource?.() ?? null), this.nitro.active, spec.nitroForce, spec.nitroTop);
-    const top = spec.topSpeed * speedFrac * boost.top;
-    const reverseTop = spec.reverseTopSpeed * speedFrac;
+    const top = spec.topSpeed * speedFrac * boost.top * gear.top;
+    const reverseTop = spec.reverseTopSpeed * speedFrac * gear.top;
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3) * (this.grace > 0 ? MOMENTUM_GRACE_DRAG : 1);
     this.grace = Math.max(0, this.grace - dt);
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
-    const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
+    const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force * gear.power, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
     this.pulled = false;
 
     for (let i = 0; i < WHEELS; i++) {
@@ -213,6 +217,26 @@ export class Vehicle {
     else if (this.grounded === 0) this.levelInAir(dt);
 
     this.updateGrounded(dt);
+  }
+
+  /** Flip between high and low range. Returns the gear now in use. */
+  toggleGear(): Gear {
+    this.gear = toggleGear(this.spec.role, this.gear);
+    return this.gear;
+  }
+
+  /**
+   * Puts the car down at a spot, upright, facing `yaw`, standing still. Used when a mission sends a car
+   * back to a checkpoint.
+   */
+  placeAt(x: number, z: number, yaw: number): void {
+    const y = this.pw.terrain.heightAt(x, z) + this.spec.wheelRadius + this.spec.suspensionRest + this.spec.half.y + 0.5;
+    this.body.setTranslation({ x, y, z }, true);
+    this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.flippedFor = 0;
+    this.cur = this.prev = this.readPose();
   }
 
   /** The jump key was pressed. The hop fires as soon as the car may hop (a short press buffer applies). */

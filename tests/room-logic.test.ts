@@ -493,3 +493,21 @@ describe('missions in the room', () => {
     });
   });
 });
+
+describe('goals', () => {
+  it('a free goal is announced to everyone', () => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb', 'hauler'), 0);
+    const r = room.message('c1', { type: 'goal', id: 'terrace' }, 1000);
+    expect(to(r, 'c2')).toContainEqual({ type: 'goal', id: 'terrace', by: 'p1' });
+  });
+
+  it('a goal that only a mission uses is ignored if a client sends it on its own', () => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb', 'hauler'), 0);
+    const r = room.message('c1', { type: 'goal', id: 'rock-far' }, 1000);
+    expect(r.out).toEqual([]);
+  });
+});
