@@ -26,7 +26,7 @@ None: all local physics, no messages.
 
 - `tests/drift.test.ts` (36): slip angle signs; a drift does not start slowly, airborne, on mud or water, or in reverse; the handbrake and hard steering start it, a gentle steer does not; the handbrake has time to bite; it ends below the exit slip, when slow, or after being airborne (not on a bump); rear grip falls with the slide and comes back near the cap for every car; the counter-steer is toward the velocity and limited; drag relief; the car ordering (Scout enters easiest, slides furthest, Hauler least); **in real physics every car on paving, grass, gravel and sand**: it starts, never flips (upright stays above 0.9), holds the slip under the cap (within 15%), keeps its speed (the Scout at least 35% of its entry speed, the others at least 80%), and recovers to straight with no drift left; on mud and water it never starts; a drift charges the personal nitro tank; and a straight run or a gentle bend never starts one.
 - `tests/audio-model.test.ts`: a slide squeals, more the deeper it is, not on soft ground or when slow.
-- Browser: see the run notes in the commit.
+- Browser (solo, real worker): for the Scout, Relay and Hauler, holding the handbrake and steering at speed started the drift state, the personal nitro tank rose (the Scout from 0.20 to 0.25 in under a second of game time), tyre marks were laid (2, 20 and 30), the cars stayed upright and straightened out after letting go, with no errors. **The headless browsers run at a few frames a second, so game time barely advances and the slides stayed shallow (slip near 0): how wide a slide looks and feels is covered by the real-physics tests above, not by this run.**
 
 ## Tuning knobs (`shared/drift.ts`)
 
