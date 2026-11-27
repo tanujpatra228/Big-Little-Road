@@ -259,8 +259,8 @@ export class RoomClient {
     else this.send(encode({ type: 'tool', op: 'drop', slot: m.slot, x: Math.round(m.x * 100), z: Math.round(m.z * 100), yaw: Math.round(m.yaw * 1000) }));
   }
 
-  sendCharge(): void {
-    this.send(encode({ type: 'charge' }));
+  sendCharge(x: number, z: number): void {
+    this.send(encode({ type: 'charge', x: Math.round(x * 100), z: Math.round(z * 100) }));
   }
 
   sendRules(signal: boolean): void {

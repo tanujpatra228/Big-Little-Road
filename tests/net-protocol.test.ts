@@ -125,7 +125,12 @@ describe('toolbox frames', () => {
 });
 
 describe('charge frames', () => {
-  it('a bare charge is accepted and carries nothing else', () => {
-    expect(parseClientMessage(JSON.stringify({ type: 'charge', amount: 1 }))).toEqual({ type: 'charge' });
+  it('a charge carries only where the Relay is', () => {
+    expect(parseClientMessage(JSON.stringify({ type: 'charge', x: 6500, z: -6000, amount: 1 }))).toEqual({ type: 'charge', x: 6500, z: -6000 });
+  });
+  it('rejects a charge without a position, or with a silly one', () => {
+    expect(parseClientMessage(JSON.stringify({ type: 'charge' }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'charge', x: 99999999, z: 0 }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'charge', x: 1.5, z: 0 }))).toBeNull();
   });
 });

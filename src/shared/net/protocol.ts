@@ -73,8 +73,8 @@ export type ClientMsg =
   /** The crew toolbox: drop what is in a slot at x, z (cm) facing yaw (mrad), or pick up a placed item. */
   | { type: 'tool'; op: 'drop'; slot: number; x: number; z: number; yaw: number }
   | { type: 'tool'; op: 'pickup'; id: string }
-  /** A Relay truck tops up the team battery (30 s cooldown, Relay only). */
-  | { type: 'charge' }
+  /** A Relay truck tops up the team battery (cooldown, Relay only). x, z (cm) is where it is, so the lost car can tell it is close. */
+  | { type: 'charge'; x: number; z: number }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -177,7 +177,8 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       return null;
     }
     case 'charge':
-      return { type: 'charge' };
+      if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;
+      return { type: 'charge', x: m.x, z: m.z };
     case 'tool': {
       if (m.op === 'pickup') return typeof m.id === 'string' && /^[a-z0-9]{1,12}$/.test(m.id) ? { type: 'tool', op: 'pickup', id: m.id } : null;
       if (m.op === 'drop') {

@@ -487,7 +487,10 @@ async function boot(): Promise<void> {
     if (input.wasPressed('KeyB')) {
       if (net.status !== 'on') hud.toast('Charging needs a team', 'Join a room: the Relay tops up the team battery.', 2400);
       else if (role !== 'relay') hud.toast('Only the Relay can charge', 'Press 3 for the Relay truck.', 2400);
-      else net.sendCharge();
+      else {
+        const t = vehicle.body.translation();
+        net.sendCharge(t.x, t.z);
+      }
     }
     if (input.wasPressed('KeyE')) toolsCtl.drop();
     if (input.wasPressed('KeyX')) toolsCtl.pickUp();

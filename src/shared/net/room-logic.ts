@@ -207,7 +207,7 @@ export class RoomLogic {
       case 'tool':
         return this.toolMessage(conn, p, msg);
       case 'charge':
-        return this.charge(conn, p, now);
+        return this.charge(conn, p, msg, now);
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -233,16 +233,15 @@ export class RoomLogic {
   }
 
   /** A Relay truck tops up the team battery. Relay only, and not more often than the cooldown. */
-  private charge(conn: string, p: Player, now: number): Result {
+  private charge(conn: string, p: Player, msg: Extract<ClientMsg, { type: 'charge' }>, now: number): Result {
     const no = (reason: string, wait?: number): Result => ({ out: [{ to: { conn }, msg: { type: 'charge', by: p.id, ok: false, x: 0, z: 0, wait, reason } }], close: [] });
     if (p.role !== 'relay') return no('Only the Relay truck can charge the battery. Press 3 for the Relay.');
     const last = this.chargedAt.get(p.id);
     if (last !== undefined && now - last < CHARGE_COOLDOWN * 1000) return no('The charger is still warming up.', Math.ceil((CHARGE_COOLDOWN * 1000 - (now - last)) / 1000));
     this.chargedAt.set(p.id, now);
     this.battery.topUp(CHARGE_AMOUNT, now);
-    const x = Math.round((p.pos?.x ?? 0) * 100);
-    const z = Math.round((p.pos?.z ?? 0) * 100);
-    return { out: [{ to: 'all', msg: { type: 'charge', by: p.id, ok: true, x, z } }, this.batteryOut(now)], close: [] };
+    // Where the Relay says it is: a parked car sends no poses, and a room that slept has forgotten them.
+    return { out: [{ to: 'all', msg: { type: 'charge', by: p.id, ok: true, x: msg.x, z: msg.z } }, this.batteryOut(now)], close: [] };
   }
 
   private toolsOut(event?: 'drop' | 'pickup' | 'reset' | 'refused', by?: string, kind?: string): Out {

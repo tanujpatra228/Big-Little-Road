@@ -21,7 +21,7 @@ Roadmap Step 4. The radio system finally has a job. A lost car sits far out on t
 
 - **Relay truck only.** One press tops up the **team battery by 30%**, for everyone, and lifts a lockout if it brings the battery back above the restart level. Cooldown **20 s** per Relay. Everyone is told who charged it.
 - This is the Relay's reason to exist at 2 players: a Relay that is parked as a link still helps the team, and a Relay that comes along keeps the nitro going.
-- The room checks it: only a Relay, and not more often than the cooldown (a refusal tells the sender how many seconds remain).
+- The room checks it: only a Relay, and not more often than the cooldown (a refusal tells the sender how many seconds remain). The Relay says where it is in the request: a parked car sends no poses and a room that slept has forgotten them, so the room's own idea of its position would not do (a browser run found this).
 - Alone there is no team battery, so the key just says so.
 
 ## Teammates' link status
