@@ -2,7 +2,7 @@ import type { CarRole } from '../cars';
 import { MAX_PLAYERS, type ClientMsg, type MissionNotice, type PlayerInfo, type RoomRules, type ServerMsg } from './protocol';
 import { PropsLogic, toInfo, type PropState } from './props';
 import { GOAL_COOLDOWN_MS, goalById } from '../goals';
-import { SharedBattery, toBatteryInfo } from '../battery';
+import { CHARGE_AMOUNT, CHARGE_COOLDOWN, SharedBattery, toBatteryInfo } from '../battery';
 import { addReset, playerLeft, report, startMission, toInfo as missionToInfo, type MissionDef, type MissionEvent, type MissionInfo, type MissionState } from '../mission-logic';
 import { missionById } from '../missions';
 import { DROP_REACH, PICKUP_RANGE, REFUSALS, dropItem, newTools, pickUp, toWire, type Tools } from '../toolbox';
@@ -61,6 +61,8 @@ export class RoomLogic {
   mission: MissionState | null = null;
   /** The shared toolbox and what has been put down from it. Saved with the room. */
   tools: Tools = newTools();
+  /** When each Relay last charged the battery (room clock, ms). Not saved: a slept room has cooled down. */
+  private readonly chargedAt = new Map<string, number>();
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
@@ -204,6 +206,8 @@ export class RoomLogic {
         return this.missionMessage(conn, p, msg, now);
       case 'tool':
         return this.toolMessage(conn, p, msg);
+      case 'charge':
+        return this.charge(conn, p, now);
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -226,6 +230,19 @@ export class RoomLogic {
         return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
       }
     }
+  }
+
+  /** A Relay truck tops up the team battery. Relay only, and not more often than the cooldown. */
+  private charge(conn: string, p: Player, now: number): Result {
+    const no = (reason: string, wait?: number): Result => ({ out: [{ to: { conn }, msg: { type: 'charge', by: p.id, ok: false, x: 0, z: 0, wait, reason } }], close: [] });
+    if (p.role !== 'relay') return no('Only the Relay truck can charge the battery. Press 3 for the Relay.');
+    const last = this.chargedAt.get(p.id);
+    if (last !== undefined && now - last < CHARGE_COOLDOWN * 1000) return no('The charger is still warming up.', Math.ceil((CHARGE_COOLDOWN * 1000 - (now - last)) / 1000));
+    this.chargedAt.set(p.id, now);
+    this.battery.topUp(CHARGE_AMOUNT, now);
+    const x = Math.round((p.pos?.x ?? 0) * 100);
+    const z = Math.round((p.pos?.z ?? 0) * 100);
+    return { out: [{ to: 'all', msg: { type: 'charge', by: p.id, ok: true, x, z } }, this.batteryOut(now)], close: [] };
   }
 
   private toolsOut(event?: 'drop' | 'pickup' | 'reset' | 'refused', by?: string, kind?: string): Out {
@@ -351,6 +368,7 @@ export class RoomLogic {
     const p = this.byConn(conn);
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
+    this.chargedAt.delete(p.id);
     const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
     if (this.players.size === 0) this.tools = newTools();
     // The mission goes on without them; an objective that needed everyone may now be met.

@@ -50,6 +50,32 @@ export const MISSIONS: readonly MissionDef[] = [
       },
     ],
   },
+  {
+    id: 'deadsignal',
+    name: 'Dead Signal',
+    blurb: 'A lost car sits far out on the lawn, past the base radio. Run a radio link out to it, drive out, and charge its flat battery from the Relay truck.',
+    minPlayers: 2,
+    parSeconds: 360,
+    celebrate: 'dead-car',
+    rules: { signal: true },
+    stages: [
+      {
+        id: 'link',
+        title: 'Run a radio link',
+        objectives: [{ id: 'far-linked', kind: 'flag', text: 'Get radio coverage to the lost car, far out to the north east: put beacons down (4-9 pick, E drop) and park a Relay truck as a link' }],
+      },
+      {
+        id: 'reach',
+        title: 'Find the lost car',
+        objectives: [{ id: 'reach-dead', kind: 'reach', goal: 'dead-car', who: 'any', text: 'Drive a car out to it. You will lose control without signal, so keep the link up' }],
+      },
+      {
+        id: 'revive',
+        title: 'Charge it',
+        objectives: [{ id: 'car-revived', kind: 'flag', text: 'The Relay truck (key 3) parks next to it and charges it (B)' }],
+      },
+    ],
+  },
 ];
 
 export function missionById(id: string): MissionDef | undefined {

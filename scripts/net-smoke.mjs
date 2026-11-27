@@ -254,6 +254,30 @@ check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
   for (const x of [p, q]) try { x.close(); } catch {}
 }
 
+// ---- Dead Signal and the Relay's charge, in a room of their own
+{
+  const dc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(dc, 'Wes', 'relay'); await p.hello(); await sleep(250);
+  const q = new Client(dc, 'Xan', 'scout'); await q.hello(); await sleep(250);
+  q.send({ type: 'charge' }); await sleep(250);
+  check('a Scout cannot charge the battery, and only it is told', q.of('charge').some((m) => m.ok === false) && !p.of('charge').length);
+  p.send({ type: 'pose', s: 1, t: 1, x: 6500, y: 50, z: -6000, qx: 0, qy: 0, qz: 0, qw: 10000, v: 0, st: 0 }); await sleep(200);
+  p.send({ type: 'nitro', on: true }); await sleep(2000); p.send({ type: 'nitro', on: false }); await sleep(300);
+  const low = p.of('battery').at(-1)?.battery.level;
+  p.send({ type: 'charge' }); await sleep(300);
+  const topped = q.of('charge').find((m) => m.ok);
+  check('a Relay charges it: everyone is told where, and the battery goes up', topped?.by === 'p1' && topped.x === 6500 && topped.z === -6000 && q.of('battery').at(-1).battery.level > low, `low ${low} now ${q.of('battery').at(-1)?.battery.level}`);
+  p.send({ type: 'charge' }); await sleep(250);
+  check('a second charge straight away is refused with a wait', p.of('charge').some((m) => m.ok === false && m.wait > 0));
+  p.send({ type: 'mission', op: 'start', id: 'deadsignal' }); await sleep(300);
+  check('Dead Signal starts and turns the radio range on for everyone', q.of('rules').some((m) => m.signal === true) && q.of('mission').some((m) => m.event === 'start' && m.mission.id === 'deadsignal'));
+  q.send({ type: 'mission', op: 'flag', obj: 'far-linked' }); await sleep(300);
+  check('a report that the link is up moves everyone to the second stage', p.of('mission').some((m) => m.event === 'stage' && m.mission.stage === 1));
+  p.send({ type: 'mission', op: 'abort' }); await sleep(300);
+  check('ending it puts the radio rule back', q.of('rules').at(-1)?.signal === false);
+  for (const x of [p, q]) try { x.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

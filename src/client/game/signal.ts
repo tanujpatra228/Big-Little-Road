@@ -2,13 +2,14 @@ import type * as THREE from 'three';
 import type { CarRole } from '../../shared/cars';
 import type { DriveInput } from '../../shared/driving';
 import {
-  BASE, BASE_RANGE, InputDelay, RELAY_RANGE, SignalLink, failsafeInput, lagFor, linkedRelays, qualityOf, signalAt, type LinkQuality, type RelayNode,
+  BASE, BASE_RANGE, BEACON_RANGE, InputDelay, RELAY_RANGE, SignalLink, failsafeInput, lagFor, linkedRelays, qualityOf, signalAt, type LinkQuality, type RelayNode,
 } from '../../shared/signal';
 import type { Terrain } from '../../shared/terrain';
 import type { GameAudio } from '../audio/game-audio';
 import type { RemoteCar } from '../net/remote-car';
 import type { Vehicle } from '../physics/vehicle';
 import { SignalRings, type RingSpec } from '../render/signal-rings';
+import type { Placed } from '../../shared/toolbox';
 
 export interface SignalDeps {
   scene: THREE.Scene;
@@ -18,6 +19,17 @@ export interface SignalDeps {
   selfId: () => string;
   vehicle: () => Vehicle;
   audio: GameAudio;
+  /** Beacons standing in the yard: each is a small radio source once it is linked. */
+  beacons: () => readonly Placed[];
+  nameOf: (id: string) => string;
+}
+
+/** How a teammate's radio link looks from here. */
+export interface TeamLink {
+  id: string;
+  name: string;
+  strength: number;
+  lost: boolean;
 }
 
 /**
@@ -67,13 +79,32 @@ export class SignalController {
     this.lag = 0;
   }
 
-  /** Relay trucks we can see: other players' (drawn positions) and ours, if we are one. */
+  /** Everything that carries the signal: Relay trucks (others' drawn positions, and ours) and standing beacons. */
   private relays(): RelayNode[] {
     const out: RelayNode[] = [];
+    for (const b of this.d.beacons()) if (b.kind === 'beacon') out.push({ id: `beacon:${b.id}`, x: b.x, z: b.z, range: BEACON_RANGE });
     for (const [id, rc] of this.d.remotes()) if (rc.role === 'relay' && rc.visible) out.push({ id, x: rc.position.x, z: rc.position.z });
     if (this.d.role() === 'relay') {
       const t = this.d.vehicle().body.translation();
       out.push({ id: this.d.selfId(), x: t.x, z: t.z });
+    }
+    return out;
+  }
+
+  /** The signal at any point of the yard, as the current Relays and beacons would give it (0 when the rule is off is NOT applied: the caller decides). */
+  strengthAt(x: number, z: number): number {
+    return signalAt({ x, z }, this.relays(), null);
+  }
+
+  /** Each teammate's link, worked out from their drawn position. Empty when the radio rule is off. */
+  team(): TeamLink[] {
+    if (!this.on) return [];
+    const relays = this.relays();
+    const out: TeamLink[] = [];
+    for (const [id, rc] of this.d.remotes()) {
+      if (!rc.visible) continue;
+      const s = signalAt({ x: rc.position.x, z: rc.position.z }, relays, rc.role === 'relay' ? id : null);
+      out.push({ id, name: this.d.nameOf(id), strength: s, lost: s <= 0 });
     }
     return out;
   }
@@ -96,7 +127,10 @@ export class SignalController {
 
     const linked = new Set(linkedRelays(relays).map((r) => r.id));
     const specs: RingSpec[] = [{ key: 'base', x: BASE.x, z: BASE.z, range: BASE_RANGE, color: 0x39d0ff, dim: false }];
-    for (const r of relays) specs.push({ key: `relay-${r.id}`, x: r.x, z: r.z, range: RELAY_RANGE, color: 0x6dff9e, dim: !linked.has(r.id) });
+    for (const r of relays) {
+      const isBeacon = r.id.startsWith('beacon:');
+      specs.push({ key: `relay-${r.id}`, x: r.x, z: r.z, range: r.range ?? RELAY_RANGE, color: isBeacon ? 0x4fe3c1 : 0x6dff9e, dim: !linked.has(r.id) });
+    }
     this.rings.update(specs, true, dt);
   }
 

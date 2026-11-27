@@ -44,8 +44,8 @@ One small message from a player each time the switch is flipped (a human action,
 
 ## Not done
 
-- It is not on in any mission yet: no mission turns the rule on by itself (the room switch is for now).
+- ~~It is not on in any mission yet~~: Dead Signal (`dead-signal.md`) turns it on by itself and puts it back afterwards.
 - Lag applies to steering, throttle, handbrake and nitro. Jumping is not delayed (it is only blocked when cut off).
-- No other player's link status is shown (you cannot see that a teammate is cut off, except by the Relay ring turning red).
+- ~~No other player's link status is shown~~: a small list under the signal bars shows each teammate's link (see `dead-signal.md`). Placed beacons are radio sources too (30 m).
 - The signal does not carry to the plank or other props, and there is no minimap showing coverage.
 - Sound is two short beeps; no static or crackle as the signal fades.

@@ -621,3 +621,48 @@ describe('the crew toolbox in the room', () => {
     expect(back.tools.placed).toHaveLength(0);
   });
 });
+
+describe('a Relay charging the team battery', () => {
+  const two = (): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa', 'relay'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb', 'scout'), 0);
+    return room;
+  };
+  const charges = (r: Result, conn: string) => to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'charge' }> => m.type === 'charge');
+
+  it('tops it up for everyone and says where the Relay was', () => {
+    const room = two();
+    room.message('c1', { ...pose, x: 6500, z: -6000 }, 100);
+    room.message('c2', { type: 'nitro', on: true }, 1000);
+    room.message('c2', { type: 'nitro', on: false }, 6000); // used half
+    const before = room.battery.snapshot(6000).level;
+    const r = room.message('c1', { type: 'charge' }, 6000);
+    for (const conn of ['c1', 'c2']) {
+      expect(charges(r, conn)[0]).toMatchObject({ by: 'p1', ok: true, x: 6500, z: -6000 });
+      expect(to(r, conn).some((m) => m.type === 'battery')).toBe(true);
+    }
+    expect(room.battery.snapshot(6000).level).toBeCloseTo(Math.min(1, before + 0.3), 3);
+  });
+
+  it('only a Relay truck can', () => {
+    const room = two();
+    const r = room.message('c2', { type: 'charge' }, 1000);
+    expect(charges(r, 'c2')[0]).toMatchObject({ ok: false });
+    expect(charges(r, 'c1')).toHaveLength(0);
+  });
+
+  it('is on a cooldown, and tells you how long', () => {
+    const room = two();
+    room.message('c1', { type: 'charge' }, 1000);
+    const r = room.message('c1', { type: 'charge' }, 6000);
+    expect(charges(r, 'c1')[0]).toMatchObject({ ok: false, wait: 15 });
+    expect(charges(room.message('c1', { type: 'charge' }, 21500), 'c2')[0]).toMatchObject({ ok: true });
+  });
+
+  it('a player who turns into a Relay can charge, and one who leaves forgets the cooldown', () => {
+    const room = two();
+    room.message('c2', { type: 'car', role: 'relay' }, 100);
+    expect(charges(room.message('c2', { type: 'charge' }, 200), 'c1')[0]).toMatchObject({ ok: true, by: 'p2' });
+  });
+});

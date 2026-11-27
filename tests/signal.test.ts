@@ -250,3 +250,57 @@ describe('input delay', () => {
     expect(new InputDelay<number>().at(1, 0.2)).toBeUndefined();
   });
 });
+
+import { BEACON_RANGE } from '../src/shared/signal';
+
+describe('placed beacons as radio sources', () => {
+  const beacon = (id: string, x: number, z: number) => ({ id: `beacon:${id}`, x, z, range: BEACON_RANGE });
+
+  it('a beacon within the base range extends it, with its own (smaller) reach', () => {
+    const b = beacon('o1', BASE.x + 40, BASE.z);
+    expect(signalAt({ x: BASE.x + 60, z: BASE.z }, [])).toBe(0);
+    expect(signalAt({ x: BASE.x + 60, z: BASE.z }, [b])).toBeGreaterThan(0.2);
+    expect(signalAt({ x: BASE.x + 40 + BEACON_RANGE + 1, z: BASE.z }, [b])).toBe(0);
+  });
+
+  it('a beacon that nothing links is silent', () => {
+    const lonely = beacon('o1', BASE.x + 90, BASE.z);
+    expect(signalAt({ x: BASE.x + 90, z: BASE.z }, [lonely])).toBe(0);
+    expect(linkedRelays([lonely])).toEqual([]);
+  });
+
+  it('beacons chain, each linked by the one before it, using the reach of the one that is already linked', () => {
+    const b1 = beacon('o1', BASE.x + 45, BASE.z);
+    const b2 = beacon('o2', BASE.x + 45 + BEACON_RANGE - 1, BASE.z);
+    const b3 = beacon('o3', BASE.x + 45 + 2 * (BEACON_RANGE - 1), BASE.z);
+    expect(linkedRelays([b3, b2, b1]).map((n) => n.id).sort()).toEqual(['beacon:o1', 'beacon:o2', 'beacon:o3']);
+    expect(linkedRelays([b3, b2]).map((n) => n.id)).toEqual([]); // b2 is 74 m out: not linked without b1
+    expect(signalAt({ x: BASE.x + 45 + 2 * (BEACON_RANGE - 1) + 5, z: BASE.z }, [b1, b2, b3])).toBeGreaterThan(0.5);
+  });
+
+  it('a Relay truck can link through a beacon, and a beacon through a Relay', () => {
+    const b = beacon('o1', BASE.x + 45, BASE.z);
+    const relay = { id: 'p2', x: BASE.x + 45 + BEACON_RANGE - 2, z: BASE.z }; // within the beacon's reach, out of the base's
+    expect(linkedRelays([b, relay]).map((n) => n.id).sort()).toEqual(['beacon:o1', 'p2']);
+    const far = beacon('o2', BASE.x + 45 + BEACON_RANGE - 2 + 35, BASE.z); // within the Relay's reach (38)
+    expect(linkedRelays([b, relay, far]).map((n) => n.id)).toContain('beacon:o2');
+  });
+
+  it('two beacons from the toolbox reach the far corner where the lost car waits', () => {
+    // 45 m out, then 70 m out, along the way to a point about 87 m from the base.
+    const dir = { x: 0.78, z: -0.62 };
+    const at = (d: number) => ({ x: BASE.x + dir.x * d, z: BASE.z + dir.z * d });
+    const target = at(87);
+    const b1 = { id: 'beacon:o1', ...at(45), range: BEACON_RANGE };
+    const b2 = { id: 'beacon:o2', ...at(70), range: BEACON_RANGE };
+    expect(signalAt(target, [])).toBe(0);
+    expect(signalAt(target, [b1])).toBe(0);
+    expect(signalAt(target, [b1, b2])).toBeGreaterThan(0.25);
+    expect(signalAt(target, [b2])).toBe(0); // b2 alone is not linked
+  });
+
+  it('is unaffected for plain Relays (no range given)', () => {
+    const relay = { id: 'p2', x: BASE.x + 40, z: BASE.z };
+    expect(signalAt({ x: BASE.x + 70, z: BASE.z }, [relay])).toBeCloseTo(1 - 30 / 38, 5);
+  });
+});

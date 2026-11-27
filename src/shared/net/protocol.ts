@@ -73,6 +73,8 @@ export type ClientMsg =
   /** The crew toolbox: drop what is in a slot at x, z (cm) facing yaw (mrad), or pick up a placed item. */
   | { type: 'tool'; op: 'drop'; slot: number; x: number; z: number; yaw: number }
   | { type: 'tool'; op: 'pickup'; id: string }
+  /** A Relay truck tops up the team battery (30 s cooldown, Relay only). */
+  | { type: 'charge' }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -102,6 +104,8 @@ export type ServerMsg =
   | { type: 'mission'; mission: MissionInfo | null; event?: MissionNotice; by?: string; reason?: string }
   /** The toolbox or the placed items changed. Always the whole state: it is small and changes rarely. */
   | { type: 'tools'; tools: ToolsInfo; event?: ToolNotice; by?: string; kind?: string; reason?: string }
+  /** A Relay charged the team battery (`ok`), at x, z (cm); or the room says no, and for how many more seconds. */
+  | { type: 'charge'; by: string; ok: boolean; x: number; z: number; wait?: number; reason?: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -172,6 +176,8 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       if (m.op === 'reach' || m.op === 'flag') return typeof m.obj === 'string' && MISSION_ID.test(m.obj) ? { type: 'mission', op: m.op, obj: m.obj } : null;
       return null;
     }
+    case 'charge':
+      return { type: 'charge' };
     case 'tool': {
       if (m.op === 'pickup') return typeof m.id === 'string' && /^[a-z0-9]{1,12}$/.test(m.id) ? { type: 'tool', op: 'pickup', id: m.id } : null;
       if (m.op === 'drop') {

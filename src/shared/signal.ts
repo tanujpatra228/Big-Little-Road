@@ -20,12 +20,16 @@ export interface Pt {
 
 export interface RelayNode extends Pt {
   id: string;
+  /** How far this source reaches. A Relay truck by default; a placed beacon reaches less. */
+  range?: number;
 }
 
 /** The base station: the patio where everyone starts. */
 export const BASE: Readonly<Pt> = { x: SPAWN.x, z: SPAWN.z };
 /** How far the base reaches, metres. */
 export const BASE_RANGE = 48;
+/** How far a placed beacon reaches. A cheap stand-in for a Relay: it cannot move, and it reaches less. */
+export const BEACON_RANGE = 30;
 /** How far a Relay reaches. Smaller than the base: it is a truck with a mast, not a tower. */
 export const RELAY_RANGE = 38;
 /** At or above this strength there is no lag at all. */
@@ -56,7 +60,7 @@ export function linkedRelays(relays: readonly RelayNode[], base: Pt = BASE): Rel
     for (let i = pending.length - 1; i >= 0; i--) {
       const r = pending[i]!;
       const viaBase = dist(r, base) < BASE_RANGE;
-      const viaRelay = linked.some((l) => dist(r, l) < RELAY_RANGE);
+      const viaRelay = linked.some((l) => dist(r, l) < (l.range ?? RELAY_RANGE));
       if (viaBase || viaRelay) {
         linked.push(r);
         pending.splice(i, 1);
@@ -75,7 +79,7 @@ export function linkedRelays(relays: readonly RelayNode[], base: Pt = BASE): Rel
 export function signalAt(p: Pt, relays: readonly RelayNode[], selfId: string | null = null, base: Pt = BASE): number {
   const others = selfId === null ? relays : relays.filter((r) => r.id !== selfId);
   let best = strength(dist(p, base), BASE_RANGE);
-  for (const r of linkedRelays(others, base)) best = Math.max(best, strength(dist(p, r), RELAY_RANGE));
+  for (const r of linkedRelays(others, base)) best = Math.max(best, strength(dist(p, r), r.range ?? RELAY_RANGE));
   return best;
 }
 

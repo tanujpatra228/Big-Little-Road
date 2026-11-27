@@ -54,3 +54,48 @@ describe('the Rock Crawl goals', () => {
     for (const st of m.stages) for (const o of st.objectives) if (o.kind === 'reach') expect(o.who).toBe('all');
   });
 });
+
+import { DEAD_CAR, REVIVE_REACH } from '../src/shared/goals';
+import { BASE, BASE_RANGE, BEACON_RANGE, RELAY_RANGE, signalAt } from '../src/shared/signal';
+import { TERRAIN_SIZE } from '../src/shared/terrain';
+
+describe('Dead Signal', () => {
+  const m = missionById('deadsignal')!;
+  const toward = (d: number) => {
+    const len = Math.hypot(DEAD_CAR.x - BASE.x, DEAD_CAR.z - BASE.z);
+    return { x: BASE.x + ((DEAD_CAR.x - BASE.x) / len) * d, z: BASE.z + ((DEAD_CAR.z - BASE.z) / len) * d };
+  };
+  const dist = Math.hypot(DEAD_CAR.x - BASE.x, DEAD_CAR.z - BASE.z);
+
+  it('needs two players and turns the radio range on by itself', () => {
+    expect(m.minPlayers).toBe(2);
+    expect(m.rules).toEqual({ signal: true });
+    expect(m.stages.map((s) => s.id)).toEqual(['link', 'reach', 'revive']);
+  });
+
+  it('the lost car is inside the yard, on the lawn, and well past the base radio', () => {
+    expect(Math.abs(DEAD_CAR.x)).toBeLessThan(TERRAIN_SIZE / 2 - 5);
+    expect(Math.abs(DEAD_CAR.z)).toBeLessThan(TERRAIN_SIZE / 2 - 5);
+    expect(dist).toBeGreaterThan(BASE_RANGE + 30);
+    expect(goalById('dead-car')?.missionOnly).toBe(true);
+    expect(REVIVE_REACH).toBeGreaterThan(goalById('dead-car')!.r);
+  });
+
+  it('cannot be covered by the base alone, by one Relay alone, or by one beacon', () => {
+    const edge = toward(BASE_RANGE - 1);
+    expect(signalAt(DEAD_CAR, [])).toBe(0);
+    expect(signalAt(DEAD_CAR, [{ id: 'p2', ...edge }])).toBeLessThan(0.25);
+    expect(signalAt(DEAD_CAR, [{ id: 'beacon:o1', ...edge, range: BEACON_RANGE }])).toBeLessThan(0.25);
+  });
+
+  it('two beacons, or a Relay and a beacon, or two Relays, do cover it', () => {
+    const one = toward(BASE_RANGE - 3);
+    const two = toward(BASE_RANGE - 3 + BEACON_RANGE - 3);
+    expect(signalAt(DEAD_CAR, [{ id: 'beacon:o1', ...one, range: BEACON_RANGE }, { id: 'beacon:o2', ...two, range: BEACON_RANGE }])).toBeGreaterThanOrEqual(0.25);
+    const relay = toward(BASE_RANGE - 3);
+    const beacon = toward(BASE_RANGE - 3 + RELAY_RANGE - 3);
+    expect(signalAt(DEAD_CAR, [{ id: 'p2', ...relay }, { id: 'beacon:o1', ...beacon, range: BEACON_RANGE }])).toBeGreaterThanOrEqual(0.25);
+    const relay2 = toward(BASE_RANGE - 3 + RELAY_RANGE - 3);
+    expect(signalAt(DEAD_CAR, [{ id: 'p2', ...relay }, { id: 'p3', ...relay2 }])).toBeGreaterThanOrEqual(0.25);
+  });
+});

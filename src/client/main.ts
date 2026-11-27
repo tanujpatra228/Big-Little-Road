@@ -34,6 +34,8 @@ import { Fireworks } from './render/fireworks';
 import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
 import { CrawlController } from './game/crawl';
 import { ToolsController } from './game/tools';
+import { DeadSignalController } from './game/deadsignal';
+import { DEAD_CAR } from '../shared/goals';
 import { PlacedObjects } from './render/placed-objects';
 import { ToolboxBar } from './ui/toolbox-bar';
 import { hasLowRange } from '../shared/gear';
@@ -269,6 +271,16 @@ async function boot(): Promise<void> {
         missions.onMessage(info, event, by, reason, performance.now());
         refreshPanel();
       },
+      charge(by, ok, x, z, wait, reason) {
+        const mine = by === net.selfId;
+        if (!ok) {
+          if (mine) hud.toast('Cannot charge', wait ? `${reason ?? ''} ${wait} s.` : reason ?? '', 2600);
+          return;
+        }
+        audio.ping('battery', mine ? 0.7 : 0.4, 0);
+        const near = deadSignal.onCharge(x, z, missions.running && missions.info?.id === 'deadsignal');
+        hud.toast(near ? 'The lost car is waking up' : 'Team battery topped up', `${mine ? 'Your' : (roster.get(by)?.name ?? 'A') + "'s"} Relay charged it`, 2400);
+      },
       tools(info, event, by, kind, reason) {
         toolsCtl.receive(info, event, by, kind, reason);
       },
@@ -306,7 +318,8 @@ async function boot(): Promise<void> {
   };
   const goalFiredAt = new Map<string, number>();
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
-  const signal = new SignalController({ scene, terrain, remotes: () => remotes, role: () => role, selfId: () => (net.status === 'on' ? net.selfId : 'me'), vehicle: () => vehicle, audio });
+  const signal = new SignalController({ scene, terrain, remotes: () => remotes, role: () => role, selfId: () => (net.status === 'on' ? net.selfId : 'me'), vehicle: () => vehicle, audio, beacons: () => toolsCtl.placed, nameOf: (id) => roster.get(id)?.name ?? 'A teammate' });
+  const deadSignal = new DeadSignalController(scene, terrain);
   const rescue = new RescueController({
     vehicle: () => vehicle,
     remotes: () => remotes,
@@ -321,6 +334,9 @@ async function boot(): Promise<void> {
     vehicle: () => vehicle,
     flags: {
       // The Terrace: both ends of the plank hooked, then the plank set down as the ramp against the wall.
+      // Dead Signal: coverage out to the lost car, and the Relay's charge next to it.
+      'far-linked': () => signal.strengthAt(DEAD_CAR.x, DEAD_CAR.z) >= 0.25,
+      'car-revived': () => deadSignal.isRevived,
       'plank-held': () => tether.plank.state.holders.every(Boolean),
       'plank-ramp': () => !tether.plank.state.holders[0] && !tether.plank.state.holders[1] && isRampPose(tether.plank.state.pose),
     },
@@ -422,6 +438,7 @@ async function boot(): Promise<void> {
     rescue,
     missions,
     crawl,
+    deadSignal,
     tools: toolsCtl,
     placedObjects,
     scene,
@@ -467,6 +484,11 @@ async function boot(): Promise<void> {
       else hud.toast(vehicle.toggleGear() === 'low' ? 'Low range' : 'High range', vehicle.gear === 'low' ? 'Slow and strong: for picking your way through rocks' : 'Full speed', 1600);
     }
     for (let i = 0; i < 6; i++) if (input.wasPressed(`Digit${i + 4}`)) toolsCtl.select(i);
+    if (input.wasPressed('KeyB')) {
+      if (net.status !== 'on') hud.toast('Charging needs a team', 'Join a room: the Relay tops up the team battery.', 2400);
+      else if (role !== 'relay') hud.toast('Only the Relay can charge', 'Press 3 for the Relay truck.', 2400);
+      else net.sendCharge();
+    }
     if (input.wasPressed('KeyE')) toolsCtl.drop();
     if (input.wasPressed('KeyX')) toolsCtl.pickUp();
     if (input.wasPressed('KeyF')) tether.toggle();
@@ -491,6 +513,8 @@ async function boot(): Promise<void> {
     terrace.update(now / 1000, Math.max(0, Math.min(1, (celebrateUntil - performance.now()) / 2000)));
     fireworks.update(frame);
     hud.setPrompt(tether.prompt ?? crawl.warn ?? toolsCtl.prompt());
+    deadSignal.update(missions.info?.id === 'deadsignal', missions.info?.id === 'deadsignal' && missions.info.status === 'complete', frame);
+    hud.setTeamLinks(signal.team());
     toolbar.update(toolsCtl.tools.slots, toolsCtl.selected);
     placedObjects.update(frame);
     hud.setGear(hasLowRange(role) ? (vehicle.gear === 'low' ? 'LOW RANGE (G)' : 'HIGH RANGE (G for low)') : null, vehicle.gear === 'low');

@@ -123,3 +123,9 @@ describe('toolbox frames', () => {
     expect(parse({ type: 'tool', op: 'nuke' })).toBeNull();
   });
 });
+
+describe('charge frames', () => {
+  it('a bare charge is accepted and carries nothing else', () => {
+    expect(parseClientMessage(JSON.stringify({ type: 'charge', amount: 1 }))).toEqual({ type: 'charge' });
+  });
+});

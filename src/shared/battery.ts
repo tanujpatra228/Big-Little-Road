@@ -19,6 +19,11 @@ export const REGEN_DELAY = 1.5;
 /** After running dry, boosting stays off until the battery is back to this. */
 export const RESTART_LEVEL = 0.15;
 
+/** What one Relay charge adds to the team battery (a fraction of full). */
+export const CHARGE_AMOUNT = 0.3;
+/** Seconds before the same Relay can charge again. */
+export const CHARGE_COOLDOWN = 20;
+
 /** The state of the battery at one instant. */
 export interface BatterySnapshot {
   /** 0 empty to 1 full. */
@@ -97,6 +102,18 @@ export class SharedBattery {
     this.update(now);
     if (!this.wanting.delete(id)) return;
     this.snap = { ...this.snap, boosters: this.wanting.size, regenIn: this.wanting.size === 0 ? REGEN_DELAY : this.snap.regenIn };
+  }
+
+  /**
+   * A Relay's charge: adds `amount` at once. A battery that ran dry is unlocked if this brings it back
+   * above the restart level. Returns the battery after it.
+   */
+  topUp(amount: number, now: number): BatterySnapshot {
+    this.update(now);
+    const level = clamp01(this.snap.level + amount);
+    const locked = this.snap.locked && level < RESTART_LEVEL;
+    this.snap = { ...this.snap, level, locked };
+    return { ...this.snap };
   }
 
   /** The battery as it is at `now`. */

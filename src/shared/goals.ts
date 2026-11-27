@@ -15,10 +15,16 @@ export interface Goal {
   missionOnly?: boolean;
 }
 
+/** Where the lost car waits for Dead Signal: far out on the lawn, about 87 m from the base, well past its 48 m reach. */
+export const DEAD_CAR: Readonly<{ x: number; z: number }> = { x: 65, z: -60 };
+/** How close the Relay must be to the lost car to charge it. */
+export const REVIVE_REACH = 9;
+
 /** The terrace: reach the top of the platform, which only the plank-ramp gets you onto. */
 export const GOALS: readonly Goal[] = [
   { id: 'terrace', name: 'The Terrace', x: PLATFORM.x, z: PLATFORM.z, r: 3.4, minY: 0.15 + PLATFORM.height + 0.2 },
   { id: 'rock-gate', name: 'The Rock Field gate', x: CRAWL_ENTRY.x, z: CRAWL_ENTRY.z, r: 5, minY: -100, missionOnly: true },
+  { id: 'dead-car', name: 'The lost car', x: DEAD_CAR.x, z: DEAD_CAR.z, r: 6, minY: -100, missionOnly: true },
   { id: 'rock-far', name: 'The far side', x: CRAWL_FAR.x, z: CRAWL_FAR.z, r: 6, minY: -100, missionOnly: true },
 ];
 

@@ -177,3 +177,40 @@ describe('a player\'s view of the battery', () => {
     expect(later.boosters).toBe(0);
   });
 });
+
+import { CHARGE_AMOUNT, CHARGE_COOLDOWN } from '../src/shared/battery';
+
+describe('a Relay charge', () => {
+  it('adds its amount at once and never goes past full', () => {
+    const b = new SharedBattery();
+    b.start('p1', 0);
+    b.stop('p1', 5000); // used half
+    expect(b.snapshot(5000).level).toBeCloseTo(0.5, 3);
+    expect(b.topUp(CHARGE_AMOUNT, 5000).level).toBeCloseTo(0.8, 3);
+    expect(b.topUp(CHARGE_AMOUNT, 5000).level).toBeCloseTo(1, 3);
+  });
+
+  it('brings a battery that ran dry back, and lifts the lockout once it is past the restart level', () => {
+    const b = new SharedBattery();
+    b.start('p1', 0);
+    const dry = b.snapshot(11000);
+    expect(dry.locked).toBe(true);
+    const after = b.topUp(CHARGE_AMOUNT, 11000);
+    expect(after.level).toBeGreaterThan(RESTART_LEVEL);
+    expect(after.locked).toBe(false);
+    expect(b.start('p2', 11000)).toBe(true);
+  });
+
+  it('a small charge on an empty locked battery leaves it locked', () => {
+    const b = new SharedBattery();
+    b.start('p1', 0);
+    b.snapshot(11000);
+    expect(b.topUp(0.05, 11000).locked).toBe(true);
+  });
+
+  it('has a sane cooldown and amount', () => {
+    expect(CHARGE_AMOUNT).toBeGreaterThan(0.1);
+    expect(CHARGE_AMOUNT).toBeLessThan(0.6);
+    expect(CHARGE_COOLDOWN).toBeGreaterThan(10);
+  });
+});
