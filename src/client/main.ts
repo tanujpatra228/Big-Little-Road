@@ -567,7 +567,7 @@ async function boot(): Promise<void> {
     const winchPull = winchCtl.pull(performance.now());
     let steps = 0;
     while (acc >= FIXED_DT && steps < 5) {
-      vehicle.pushPlanar(rope.x + winchPull.x, rope.z + winchPull.z, FIXED_DT);
+      vehicle.pushPlanar(rope.x + winchPull.x, rope.z + winchPull.z, FIXED_DT, winchPull.x !== 0 || winchPull.z !== 0);
       rescue.step(FIXED_DT);
       vehicle.step(signal.filter(input.read(FIXED_DT), FIXED_DT, vehicle.forwardSpeed()), FIXED_DT);
       pw.world.step();

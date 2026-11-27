@@ -15,6 +15,8 @@ const FIXED_STEP = 1 / 60;
 /** After switching car, over-speed drag is a quarter strength for this many seconds. */
 export const MOMENTUM_GRACE_SECONDS = 1.5;
 const MOMENTUM_GRACE_DRAG = 0.25;
+/** Tyre grip while a winch drags the car: low enough that a sideways pull slides it instead of holding it. */
+const LOOSE_GRIP = 0.12;
 
 export interface Pose {
   x: number; y: number; z: number;
@@ -90,6 +92,8 @@ export class Vehicle {
   private velBefore = { x: 0, y: 0, z: 0 };
   private impact: Impact | null = null;
   private pulled = false;
+  /** Set by a winch pull: the tyres slide instead of holding, so a car can be dragged sideways. Cleared each step. */
+  private loose = false;
   private readonly jumpState = new JumpState();
   /** Personal nitro tank. Carried across when the car transforms. */
   readonly nitro = new NitroTank();
@@ -211,10 +215,11 @@ export class Vehicle {
       this.ctrl.setWheelEngineForce(i, cmd.engine);
       this.ctrl.setWheelBrake(i, cmd.brake);
       const rearSlide = !front && input.handbrake ? 0.45 : 1;
-      this.ctrl.setWheelFrictionSlip(i, spec.frictionSlip * grip * rearSlide);
+      this.ctrl.setWheelFrictionSlip(i, spec.frictionSlip * grip * rearSlide * (this.loose ? LOOSE_GRIP : 1));
     }
 
     this.ctrl.updateVehicle(dt);
+    this.loose = false;
 
     // Soft surfaces: speed-proportional drag the wheel model does not give us.
     const v = this.body.linvel();
@@ -359,9 +364,10 @@ export class Vehicle {
   }
 
   /** Pushes the car along the ground as an acceleration, e.g. from a rope. Call once per physics step. */
-  pushPlanar(ax: number, az: number, dt: number): void {
+  pushPlanar(ax: number, az: number, dt: number, loose = false): void {
     if (ax === 0 && az === 0) return;
     this.pulled = true;
+    if (loose) this.loose = true;
     const m = this.spec.mass;
     this.body.applyImpulse({ x: m * ax * dt, y: 0, z: m * az * dt }, true);
   }
