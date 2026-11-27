@@ -45,7 +45,7 @@ A beacon drop, a pick up or a charge is one incoming message each (1/20 of a fre
 - Pure: beacons as sources (range, chaining, an unlinked beacon is silent, Relay and beacon link each other, two beacons reach the lost car), the battery top-up (adds, caps at full, lifts a lockout, a small charge does not), the mission and goal definitions (the lost car is inside the yard and past the base radio; one Relay or one beacon alone cannot cover it).
 - Room: a Relay's charge reaches everyone with its position and tops the battery up, a Scout is refused (only it is told), the cooldown tells how long, a player who turns into a Relay can charge.
 - Real worker (CI): a Scout cannot charge, a Relay can, a second press is refused with a wait, Dead Signal turns the radio rule on and ending it puts it back, and a link report moves the stage.
-- Browsers: see the run notes in the commit.
+- Browsers (two players, real worker, Scout and Relay): the mission starts with the radio rule on and the lost car showing, with no coverage at it; A drops two beacons (B sees both) and coverage at the lost car goes from 0 to 44%; the link step completes for both; A reaches the lost car with 57% signal (stage 3); B, the Relay, parks beside it and presses B: the car wakes, the mission completes with three stars (1:14), and the radio rule goes back to off. The teammate list shows "NO SIGNAL" for a teammate driven out of range. A run found two bugs on the way: the charge location was read from the room's last pose frame (a parked car sends none), and my new HUD class clashed with the team battery bar's own `team` class and would have hidden it; both are fixed.
 
 ## Not done
 

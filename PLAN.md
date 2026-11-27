@@ -185,6 +185,6 @@ Follow section 0b. Right now:
 2. **Step 1:** built (`docs/features/missions.md`): the mission runtime with the Terrace as mission 1.
 3. **Step 2:** built and verified in two browsers (`docs/features/rock-crawl.md`): Rock Crawl with split vision and low range.
 4. **Step 3:** built and verified in two browsers (`docs/features/toolbox.md`): placeable objects and the toolbox.
-5. **Step 4:** built, verifying in two browsers (`docs/features/dead-signal.md`): Dead Signal, beacons as radio sources, the Relay's charge.
+5. **Step 4:** built and verified in two browsers (`docs/features/dead-signal.md`): Dead Signal, beacons as radio sources, the Relay's charge.
 6. **Step 5:** winch and the mud trap, Mud Bog Rescue.
 3. Check the Big Little Road domain and trademark conflicts before any public asset ships (human, step 10 at the latest).
