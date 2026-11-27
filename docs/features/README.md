@@ -16,6 +16,7 @@ House rule: every feature that touches Cloudflare gets a doc here with a budget 
 - [The crew toolbox](toolbox.md): a shared six-slot box and things to put down in the yard and pick up again; beacons and stakes get their jobs in the next steps.
 - [Dead Signal, beacons and the Relay's charge](dead-signal.md): a lost car out past the radio; beacons carry the signal, the Relay tops up the team battery and wakes the car.
 - [The winch, the mud trap and Mud Bog Rescue](winch-and-mud.md): the middle of the bog sinks cars, the Hauler's winch pulls them out and spends the team battery.
+- [Effects](effects.md): dust, sand, mud, splash and gravel per surface, tyre smoke, tyre marks, hop dust and the nitro trail; scaled by the quality ladder.
 - [Signal web](signal-web.md): radio range from the base and Relay trucks, lag, failsafe, the room switch, and the hibernation bug it found.
 - [Shared battery](shared-battery.md): one team power meter in a room that boosting drains, run-dry lockout, how it is kept without timers.
 - [Performance](performance.md): what costs frames (grass, terrain, effects), what changed, automatic quality, the F3 panel, next levers.
