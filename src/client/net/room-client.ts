@@ -18,6 +18,8 @@ export interface RoomHandlers {
   rules(signal: boolean, by: string): void;
   /** A Relay charged the team battery, or the room refused. Position in metres. */
   charge(by: string, ok: boolean, x: number, z: number, wait: number | undefined, reason: string | undefined): void;
+  /** A winch started (`on`, with its target) or stopped, or was refused (`reason`). */
+  winch(by: string, on: boolean, target: string | undefined, reason: string | undefined): void;
   /** The team battery changed. */
   battery(info: BatteryInfo): void;
   join(p: PlayerInfo): void;
@@ -200,6 +202,9 @@ export class RoomClient {
       case 'mission':
         this.h.mission(msg.mission, msg.event, msg.by, msg.reason);
         break;
+      case 'winch':
+        this.h.winch(msg.by, msg.on, msg.target, msg.reason);
+        break;
       case 'charge':
         this.h.charge(msg.by, msg.ok, msg.x / 100, msg.z / 100, msg.wait, msg.reason);
         break;
@@ -257,6 +262,10 @@ export class RoomClient {
   sendTool(m: { op: 'drop'; slot: number; x: number; z: number; yaw: number } | { op: 'pickup'; id: string }): void {
     if (m.op === 'pickup') this.send(encode({ type: 'tool', op: 'pickup', id: m.id }));
     else this.send(encode({ type: 'tool', op: 'drop', slot: m.slot, x: Math.round(m.x * 100), z: Math.round(m.z * 100), yaw: Math.round(m.yaw * 1000) }));
+  }
+
+  sendWinch(m: { op: 'start'; target: string } | { op: 'stop' }): void {
+    this.send(encode(m.op === 'start' ? { type: 'winch', op: 'start', target: m.target } : { type: 'winch', op: 'stop' }));
   }
 
   sendCharge(x: number, z: number): void {

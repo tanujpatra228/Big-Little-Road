@@ -95,6 +95,10 @@ export class Vehicle {
   readonly nitro = new NitroTank();
   /** In a room, where to read the team battery from; null while playing alone. Kept across a car switch. */
   nitroSource: (() => { level: number; locked: boolean } | null) | null = null;
+  /** 1 normally; less while sinking in or stuck in deep mud (the mud trap sets it every frame). */
+  driveScale = 1;
+  /** A hard cap on top speed in m/s, or null: a stuck car creeps, whatever its engine could do. */
+  speedCap: number | null = null;
   /** High or low range. Only the Hauler and Relay can really be in low (see shared/gear.ts). Reset to high on a car change. */
   gear: Gear = 'high';
   /** Set on the step a hop fires; the game reads it once to play the sound. */
@@ -186,13 +190,18 @@ export class Vehicle {
     // Nitro: held key plus throttle, drawn from the personal tank.
     const wantBoost = !!input.nitro && input.throttle > 0.02 && fwdSpeed > -0.5;
     const boost = boostFactor(this.nitro.update(wantBoost, dt, this.nitroSource?.() ?? null), this.nitro.active, spec.nitroForce, spec.nitroTop);
-    const top = spec.topSpeed * speedFrac * boost.top * gear.top;
-    const reverseTop = spec.reverseTopSpeed * speedFrac * gear.top;
+    const mudScale = Math.max(0.1, this.driveScale);
+    let top = spec.topSpeed * speedFrac * boost.top * gear.top * mudScale;
+    let reverseTop = spec.reverseTopSpeed * speedFrac * gear.top * mudScale;
+    if (this.speedCap !== null) {
+      top = Math.min(top, this.speedCap);
+      reverseTop = Math.min(reverseTop, this.speedCap);
+    }
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3) * (this.grace > 0 ? MOMENTUM_GRACE_DRAG : 1);
     this.grace = Math.max(0, this.grace - dt);
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
-    const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force * gear.power, top, reverseTop, spec.brakeForce, WHEELS, traction, this.pulled);
+    const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force * gear.power, top, reverseTop, spec.brakeForce, WHEELS, traction * this.driveScale, this.pulled);
     this.pulled = false;
 
     for (let i = 0; i < WHEELS; i++) {

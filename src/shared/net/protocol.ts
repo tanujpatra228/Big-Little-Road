@@ -75,6 +75,9 @@ export type ClientMsg =
   | { type: 'tool'; op: 'pickup'; id: string }
   /** A Relay truck tops up the team battery (cooldown, Relay only). x, z (cm) is where it is, so the lost car can tell it is close. */
   | { type: 'charge'; x: number; z: number }
+  /** The Hauler's winch: hook a car (p1..p4) or a stake (o1..) and reel, which spends the team battery; or stop. */
+  | { type: 'winch'; op: 'start'; target: string }
+  | { type: 'winch'; op: 'stop' }
   | { type: 'ping'; kind: PingKind; x: number; z: number }
   /** Hook one end of a prop. */
   | { type: 'attach'; prop: string; end: 0 | 1 }
@@ -106,6 +109,8 @@ export type ServerMsg =
   | { type: 'tools'; tools: ToolsInfo; event?: ToolNotice; by?: string; kind?: string; reason?: string }
   /** A Relay charged the team battery (`ok`), at x, z (cm); or the room says no, and for how many more seconds. */
   | { type: 'charge'; by: string; ok: boolean; x: number; z: number; wait?: number; reason?: string }
+  /** A winch started (`on`, with its target) or stopped, or the room refused (`reason`, to the sender only). */
+  | { type: 'winch'; by: string; on: boolean; target?: string; reason?: string }
   | { type: 'full' }
   | { type: 'error'; reason: string };
 
@@ -176,6 +181,10 @@ export function parseClientMessage(text: unknown): ClientMsg | null {
       if (m.op === 'reach' || m.op === 'flag') return typeof m.obj === 'string' && MISSION_ID.test(m.obj) ? { type: 'mission', op: m.op, obj: m.obj } : null;
       return null;
     }
+    case 'winch':
+      if (m.op === 'stop') return { type: 'winch', op: 'stop' };
+      if (m.op === 'start' && typeof m.target === 'string' && /^(p[1-4]|o[0-9]{1,6})$/.test(m.target)) return { type: 'winch', op: 'start', target: m.target };
+      return null;
     case 'charge':
       if (!isInt(m.x, -POS_LIMIT_CM, POS_LIMIT_CM) || !isInt(m.z, -POS_LIMIT_CM, POS_LIMIT_CM)) return null;
       return { type: 'charge', x: m.x, z: m.z };

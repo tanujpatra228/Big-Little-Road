@@ -63,6 +63,8 @@ export class RoomLogic {
   tools: Tools = newTools();
   /** When each Relay last charged the battery (room clock, ms). Not saved: a slept room has cooled down. */
   private readonly chargedAt = new Map<string, number>();
+  /** Winches that are reeling: the Hauler's id to what it hooked. In memory only: a winch lasts seconds. */
+  private readonly winches = new Map<string, string>();
   /** When each goal last fired, to avoid celebrating one run many times. Not persisted. */
   private readonly goalAt = new Map<string, number>();
 
@@ -178,9 +180,12 @@ export class RoomLogic {
         p.pos = { x: frame.x / 100, z: frame.z / 100 };
         return { out: [{ to: { except: conn }, msg: { type: 'pose', id: p.id, ...frame } }], close: [] };
       }
-      case 'car':
+      case 'car': {
         p.role = msg.role;
-        return { out: [{ to: 'all', msg: { type: 'car', id: p.id, role: msg.role } }], close: [] };
+        const out: Out[] = [{ to: 'all', msg: { type: 'car', id: p.id, role: msg.role } }];
+        if (msg.role !== 'hauler') out.push(...this.stopWinch(p.id, now)); // the winch is on the Hauler
+        return { out, close: [] };
+      }
       case 'horn':
         return { out: [{ to: { except: conn }, msg: { type: 'horn', id: p.id, on: msg.on } }], close: [] };
       case 'nitro': {
@@ -208,6 +213,8 @@ export class RoomLogic {
         return this.toolMessage(conn, p, msg);
       case 'charge':
         return this.charge(conn, p, msg, now);
+      case 'winch':
+        return this.winch(conn, p, msg, now);
       case 'ping':
         return { out: [{ to: { except: conn }, msg: { type: 'ping', id: p.id, kind: msg.kind, x: msg.x, z: msg.z } }], close: [] };
       case 'attach': {
@@ -230,6 +237,39 @@ export class RoomLogic {
         return changed ? { out: [{ to: 'all', msg: { type: 'prop', prop: toInfo(changed) } }], close: [] } : none();
       }
     }
+  }
+
+  private winchId(playerId: string): string {
+    return `winch:${playerId}`;
+  }
+
+  /** Stops one player's winch, if it is running: gives the battery back its drain and tells everyone. */
+  private stopWinch(playerId: string, now: number): Out[] {
+    if (!this.winches.delete(playerId)) return [];
+    this.battery.stop(this.winchId(playerId), now);
+    return [{ to: 'all', msg: { type: 'winch', by: playerId, on: false } }, this.batteryOut(now)];
+  }
+
+  /** Stops every winch that is hooked to this target (a player who left, a stake that was picked up). */
+  private stopWinchesOn(target: string, now: number): Out[] {
+    const out: Out[] = [];
+    for (const [by, to] of [...this.winches]) if (to === target) out.push(...this.stopWinch(by, now));
+    return out;
+  }
+
+  private winch(conn: string, p: Player, msg: Extract<ClientMsg, { type: 'winch' }>, now: number): Result {
+    const no = (reason: string): Result => ({ out: [{ to: { conn }, msg: { type: 'winch', by: p.id, on: false, reason } }], close: [] });
+    if (msg.op === 'stop') return { out: this.stopWinch(p.id, now), close: [] };
+    if (p.role !== 'hauler') return no('Only the Hauler has a winch. Press 2 for the Hauler.');
+    const t = msg.target;
+    if (t.startsWith('p')) {
+      if (t === p.id || !this.players.has(t)) return no('There is no one there to hook.');
+    } else if (!this.tools.placed.some((o) => o.id === t && o.kind === 'stake')) return no('That stake is gone.');
+    const out = this.stopWinch(p.id, now); // hooking something new lets go of the old one
+    if (!this.battery.start(this.winchId(p.id), now)) return { out: [...out, ...no('The team battery is empty.').out], close: [] };
+    this.winches.set(p.id, t);
+    out.push({ to: 'all', msg: { type: 'winch', by: p.id, on: true, target: t } }, this.batteryOut(now));
+    return { out, close: [] };
   }
 
   /** A Relay truck tops up the team battery. Relay only, and not more often than the cooldown. */
@@ -267,7 +307,7 @@ export class RoomLogic {
     const r = pickUp(this.tools, msg.id);
     if ('error' in r) return refuse(REFUSALS[r.error]);
     this.tools = r.tools;
-    return { out: [this.toolsOut('pickup', p.id, r.kind)], close: [] };
+    return { out: [this.toolsOut('pickup', p.id, r.kind), ...this.stopWinchesOn(msg.id, this.lastNow)], close: [] };
   }
 
   private playerIds(): string[] {
@@ -368,7 +408,8 @@ export class RoomLogic {
     if (!p) return none(); // an already-replaced socket closing: nothing to announce
     this.players.delete(p.id);
     this.chargedAt.delete(p.id);
-    const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }];
+    const stopped = [...this.stopWinch(p.id, now), ...this.stopWinchesOn(p.id, now)];
+    const out: Out[] = [{ to: 'all', msg: { type: 'leave', id: p.id } }, ...stopped];
     if (this.players.size === 0) this.tools = newTools();
     // The mission goes on without them; an objective that needed everyone may now be met.
     const def = this.missionDef();

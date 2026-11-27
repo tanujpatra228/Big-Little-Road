@@ -99,3 +99,36 @@ describe('Dead Signal', () => {
     expect(signalAt(DEAD_CAR, [{ id: 'p2', ...relay }, { id: 'p3', ...relay2 }])).toBeGreaterThanOrEqual(0.25);
   });
 });
+
+import { MUD_SHORE } from '../src/shared/goals';
+import { DEEP_MUD } from '../src/shared/mud';
+import { Surface } from '../src/shared/surfaces';
+import { generateTerrain, SPAWN } from '../src/shared/terrain';
+
+describe('Mud Bog Rescue', () => {
+  const m = missionById('mudbog')!;
+  const t = generateTerrain(20260);
+
+  it('needs two players and goes stuck, hook, free, shore', () => {
+    expect(m.minPlayers).toBe(2);
+    expect(m.stages.map((s) => s.id)).toEqual(['sink', 'hook', 'free', 'shore']);
+  });
+
+  it('the shore is firm ground outside the deep mud, on the house side, inside the yard', () => {
+    expect(t.surfaceAt(MUD_SHORE.x, MUD_SHORE.z)).not.toBe(Surface.Mud);
+    expect(t.surfaceAt(MUD_SHORE.x, MUD_SHORE.z)).not.toBe(Surface.Water);
+    expect(Math.hypot(MUD_SHORE.x - DEEP_MUD.x, MUD_SHORE.z - DEEP_MUD.z)).toBeGreaterThan(DEEP_MUD.r + 10);
+    expect(Math.hypot(MUD_SHORE.x - SPAWN.x, MUD_SHORE.z - SPAWN.z)).toBeLessThan(Math.hypot(DEEP_MUD.x - SPAWN.x, DEEP_MUD.z - SPAWN.z));
+    expect(goalById('mud-shore')).toMatchObject({ missionOnly: true, x: MUD_SHORE.x, z: MUD_SHORE.z });
+  });
+
+  it('a car stuck in the middle is further from the shore than a winch reaches in one go, so it has to be hauled', () => {
+    const d = Math.hypot(MUD_SHORE.x - DEEP_MUD.x, MUD_SHORE.z - DEEP_MUD.z);
+    expect(d).toBeGreaterThan(20);
+  });
+
+  it('the last stage needs every car on the shore', () => {
+    const last = m.stages[3]!.objectives[0]!;
+    expect(last.kind === 'reach' && last.who).toBe('all');
+  });
+});

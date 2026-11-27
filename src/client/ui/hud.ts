@@ -17,6 +17,7 @@ export class Hud {
   private readonly nitroLabel = document.createElement('div');
   private readonly gearBox = document.createElement('div');
   private readonly teamBox = document.createElement('div');
+  private readonly stuckBox = document.createElement('div');
   private teamKey = '';
   private readonly signalBox = document.createElement('div');
   private readonly signalBars: HTMLElement[] = [];
@@ -60,6 +61,7 @@ export class Hud {
       @keyframes sigblink{50%{opacity:.35}}
       .hud .gear{position:absolute;left:20px;bottom:190px;display:none;font-size:11px;font-weight:700;letter-spacing:.05em;background:#000a;padding:3px 10px;border-radius:999px;border:1px solid #fff4}
       .hud .gear.low{border-color:#ffd23f;color:#ffd23f}
+      .hud .stuck{position:absolute;top:22%;left:50%;transform:translateX(-50%);display:none;font-size:20px;font-weight:700;text-align:center;background:#3b2412e6;border:2px solid #c9964f;color:#ffd9a0;border-radius:14px;padding:8px 20px;max-width:80vw}
       .hud .teamlinks{position:absolute;left:20px;bottom:216px;display:none;flex-direction:column;gap:2px;font-size:11px;font-weight:600}
       .hud .teamlinks span{background:#000a;padding:2px 9px;border-radius:999px;border:1px solid #fff3;width:max-content}
       .hud .teamlinks span.weak{border-color:#ffc247;color:#ffc247}
@@ -85,6 +87,7 @@ export class Hud {
     this.nitroLabel.className = 'nitrolabel';
     this.gearBox.className = 'gear';
     this.teamBox.className = 'teamlinks';
+    this.stuckBox.className = 'stuck';
     this.signalBox.className = 'signal';
     const bars = document.createElement('span');
     bars.className = 'bars';
@@ -98,7 +101,7 @@ export class Hud {
     this.signalBox.append(bars, this.signalText);
     const help = document.createElement('div');
     help.className = 'help';
-    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; G low range (Hauler, Relay) &middot; 4-9 toolbox slot, E drop, X pick up &middot; B Relay charges the battery &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
+    help.innerHTML = 'W/S throttle &middot; A/D steer &middot; Space jump &middot; Shift nitro &middot; C handbrake<br>Q ping wheel &middot; V orbit camera &middot; 1 2 3 switch car &middot; H horn &middot; F hook plank &middot; G low range (Hauler, Relay) &middot; 4-9 toolbox slot, E drop, X pick up &middot; B Relay charges the battery &middot; Z Hauler winch &middot; T return plank &middot; M mute &middot; R reset (when flipped 10 s)';
     CAR_ORDER.forEach((role, i) => {
       const b = document.createElement('button');
       b.dataset.role = role;
@@ -106,7 +109,7 @@ export class Hud {
       b.onclick = () => onPick(role);
       this.cars.appendChild(b);
     });
-    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel, this.signalBox, this.gearBox, this.teamBox);
+    this.root.append(this.speed, this.info, this.banner, this.cars, help, this.fps, this.sound, this.prompt, this.toastEl, this.nitroBar, this.nitroLabel, this.signalBox, this.gearBox, this.teamBox, this.stuckBox);
     document.body.appendChild(this.root);
   }
 
@@ -137,6 +140,12 @@ export class Hud {
         return el;
       }),
     );
+  }
+
+  /** The mud trap's message (sinking, stuck), or null to hide it. */
+  setStuck(text: string | null): void {
+    this.stuckBox.style.display = text ? 'block' : 'none';
+    if (text) this.stuckBox.textContent = text;
   }
 
   /** The gear badge: null hides it (the Scout has no low range). */

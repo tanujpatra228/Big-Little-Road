@@ -35,6 +35,8 @@ import { GOALS, GOAL_COOLDOWN_MS, goalById, reached } from '../shared/goals';
 import { CrawlController } from './game/crawl';
 import { ToolsController } from './game/tools';
 import { DeadSignalController } from './game/deadsignal';
+import { WinchController } from './game/winch';
+import { MudController } from './game/mud';
 import { DEAD_CAR } from '../shared/goals';
 import { PlacedObjects } from './render/placed-objects';
 import { ToolboxBar } from './ui/toolbox-bar';
@@ -271,6 +273,9 @@ async function boot(): Promise<void> {
         missions.onMessage(info, event, by, reason, performance.now());
         refreshPanel();
       },
+      winch(by, on, target, reason) {
+        winchCtl.onMessage(by, on, target, reason);
+      },
       charge(by, ok, x, z, wait, reason) {
         const mine = by === net.selfId;
         if (!ok) {
@@ -295,6 +300,8 @@ async function boot(): Promise<void> {
           applySignalRule(false);
           missions.onWelcome(null, performance.now());
           toolsCtl.reset();
+          winchCtl.clear();
+          mud.reset();
         }
         if (net.status === 'off') {
           tether.onOffline();
@@ -320,6 +327,29 @@ async function boot(): Promise<void> {
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
   const signal = new SignalController({ scene, terrain, remotes: () => remotes, role: () => role, selfId: () => (net.status === 'on' ? net.selfId : 'me'), vehicle: () => vehicle, audio, beacons: () => toolsCtl.placed, nameOf: (id) => roster.get(id)?.name ?? 'A teammate' });
   const deadSignal = new DeadSignalController(scene, terrain);
+  const winchCtl: WinchController = new WinchController({
+    scene,
+    net: () => net,
+    selfId: () => (net.status === 'on' ? net.selfId : 'me'),
+    role: () => role,
+    vehicle: () => vehicle,
+    remotes: () => remotes,
+    stakes: () => toolsCtl.placed,
+    battery: () => battery,
+    audio,
+    toast: (title, sub, ms) => hud.toast(title, sub, ms),
+    nameOf: (id) => roster.get(id)?.name ?? 'A teammate',
+  });
+  const mud: MudController = new MudController({
+    vehicle: () => vehicle,
+    role: () => role,
+    throttle: () => (input.isDown('KeyW') || input.isDown('ArrowUp') || input.isDown('KeyS') || input.isDown('ArrowDown') ? 1 : 0),
+    winched: () => winchCtl.pullingMe,
+    toast: (title, sub, ms) => hud.toast(title, sub, ms),
+    onStuck: () => {
+      if (net.status === 'on') pings.send('tow', performance.now());
+    },
+  });
   const rescue = new RescueController({
     vehicle: () => vehicle,
     remotes: () => remotes,
@@ -335,6 +365,10 @@ async function boot(): Promise<void> {
     flags: {
       // The Terrace: both ends of the plank hooked, then the plank set down as the ramp against the wall.
       // Dead Signal: coverage out to the lost car, and the Relay's charge next to it.
+      // Mud Bog Rescue: a car stuck, the winch hooked, the car freed by it.
+      'car-stuck': () => mud.stuck,
+      'winch-on': () => winchCtl.ownRunning,
+      'freed-by-winch': () => mud.freedByWinchLatch,
       'far-linked': () => signal.strengthAt(DEAD_CAR.x, DEAD_CAR.z) >= 0.25,
       'car-revived': () => deadSignal.isRevived,
       'plank-held': () => tether.plank.state.holders.every(Boolean),
@@ -438,6 +472,8 @@ async function boot(): Promise<void> {
     rescue,
     missions,
     crawl,
+    winch: winchCtl,
+    mud,
     deadSignal,
     tools: toolsCtl,
     placedObjects,
@@ -484,6 +520,7 @@ async function boot(): Promise<void> {
       else hud.toast(vehicle.toggleGear() === 'low' ? 'Low range' : 'High range', vehicle.gear === 'low' ? 'Slow and strong: for picking your way through rocks' : 'Full speed', 1600);
     }
     for (let i = 0; i < 6; i++) if (input.wasPressed(`Digit${i + 4}`)) toolsCtl.select(i);
+    if (input.wasPressed('KeyZ')) winchCtl.toggle();
     if (input.wasPressed('KeyB')) {
       if (net.status !== 'on') hud.toast('Charging needs a team', 'Join a room: the Relay tops up the team battery.', 2400);
       else if (role !== 'relay') hud.toast('Only the Relay can charge', 'Press 3 for the Relay truck.', 2400);
@@ -502,6 +539,9 @@ async function boot(): Promise<void> {
     rescue.update(frame);
     missions.update(performance.now());
     crawl.update(frame);
+    winchCtl.update(performance.now());
+    mud.update(frame);
+    if (!(missions.running && missions.info?.id === 'mudbog')) mud.freedByWinchLatch = false;
     missionPanel.update(missions.view(performance.now()), performance.now(), missions.completedAt);
     hud.rescueText = rescue.text;
     hud.setSignal(signal.enabled ? { strength: signal.strength, quality: signal.quality, lag: signal.lag } : null);
@@ -515,7 +555,8 @@ async function boot(): Promise<void> {
     }
     terrace.update(now / 1000, Math.max(0, Math.min(1, (celebrateUntil - performance.now()) / 2000)));
     fireworks.update(frame);
-    hud.setPrompt(tether.prompt ?? crawl.warn ?? toolsCtl.prompt());
+    hud.setPrompt(tether.prompt ?? crawl.warn ?? winchCtl.prompt ?? toolsCtl.prompt());
+    hud.setStuck(mud.banner);
     deadSignal.update(missions.info?.id === 'deadsignal', missions.info?.id === 'deadsignal' && missions.info.status === 'complete', frame);
     hud.setTeamLinks(signal.team());
     toolbar.update(toolsCtl.tools.slots, toolsCtl.selected);
@@ -523,9 +564,10 @@ async function boot(): Promise<void> {
     hud.setGear(hasLowRange(role) ? (vehicle.gear === 'low' ? 'LOW RANGE (G)' : 'HIGH RANGE (G for low)') : null, vehicle.gear === 'low');
 
     if (input.jumpPressed() && !signal.cutOff) vehicle.requestJump();
+    const winchPull = winchCtl.pull(performance.now());
     let steps = 0;
     while (acc >= FIXED_DT && steps < 5) {
-      vehicle.pushPlanar(rope.x, rope.z, FIXED_DT);
+      vehicle.pushPlanar(rope.x + winchPull.x, rope.z + winchPull.z, FIXED_DT);
       rescue.step(FIXED_DT);
       vehicle.step(signal.filter(input.read(FIXED_DT), FIXED_DT, vehicle.forwardSpeed()), FIXED_DT);
       pw.world.step();

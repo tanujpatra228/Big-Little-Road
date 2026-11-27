@@ -134,3 +134,17 @@ describe('charge frames', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'charge', x: 1.5, z: 0 }))).toBeNull();
   });
 });
+
+describe('winch frames', () => {
+  const parse = (o: unknown) => parseClientMessage(JSON.stringify(o));
+  it('accepts a start on a player or a stake, and a stop', () => {
+    expect(parse({ type: 'winch', op: 'start', target: 'p2' })).toEqual({ type: 'winch', op: 'start', target: 'p2' });
+    expect(parse({ type: 'winch', op: 'start', target: 'o12' })).toEqual({ type: 'winch', op: 'start', target: 'o12' });
+    expect(parse({ type: 'winch', op: 'stop', target: 'x' })).toEqual({ type: 'winch', op: 'stop' });
+  });
+  it('rejects odd targets and ops', () => {
+    for (const target of ['p5', 'p', '../x', 'o', 'o1234567', '', 5]) expect(parse({ type: 'winch', op: 'start', target })).toBeNull();
+    expect(parse({ type: 'winch', op: 'pull' })).toBeNull();
+    expect(parse({ type: 'winch', op: 'start' })).toBeNull();
+  });
+});

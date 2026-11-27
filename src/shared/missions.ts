@@ -76,6 +76,36 @@ export const MISSIONS: readonly MissionDef[] = [
       },
     ],
   },
+  {
+    id: 'mudbog',
+    name: 'Mud Bog Rescue',
+    blurb: 'The middle of the bog is a trap. Get a car stuck in it on purpose, then the Hauler winches it out and hauls it to the shore. The winch spends the team battery.',
+    minPlayers: 2,
+    parSeconds: 300,
+    celebrate: 'mud-shore',
+    stages: [
+      {
+        id: 'sink',
+        title: 'Get stuck',
+        objectives: [{ id: 'car-stuck', kind: 'flag', text: 'A car drives into the middle of the mud bog (west of the house) and sinks. Stay put until it is stuck' }],
+      },
+      {
+        id: 'hook',
+        title: 'Hook the winch',
+        objectives: [{ id: 'winch-on', kind: 'flag', text: 'The Hauler (key 2) parks on firm ground within 25 m and hooks the stuck car (Z)' }],
+      },
+      {
+        id: 'free',
+        title: 'Reel it out',
+        objectives: [{ id: 'freed-by-winch', kind: 'flag', text: 'Keep reeling until the car comes free. The winch drains the team battery, so the Relay (B) may need to top it up' }],
+      },
+      {
+        id: 'shore',
+        title: 'Haul it to the shore',
+        objectives: [{ id: 'reach-shore', kind: 'reach', goal: 'mud-shore', who: 'all', text: 'Both cars on firm ground at the shore, on the house side of the bog' }],
+      },
+    ],
+  },
 ];
 
 export function missionById(id: string): MissionDef | undefined {

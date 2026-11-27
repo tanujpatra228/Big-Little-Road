@@ -665,3 +665,97 @@ describe('a Relay charging the team battery', () => {
     expect(charges(room.message('c2', { type: 'charge', x: 0, z: 0 }, 200), 'c1')[0]).toMatchObject({ ok: true, by: 'p2' });
   });
 });
+
+describe('the Hauler winch in the room', () => {
+  const crew = (): RoomLogic => {
+    const room = new RoomLogic('ABCD');
+    room.hello('c1', hello('Ada', 'key-aaaaaaaa', 'hauler'), 0);
+    room.hello('c2', hello('Bo', 'key-bbbbbbbb', 'scout'), 0);
+    return room;
+  };
+  const winches = (r: Result, conn: string) => to(r, conn).filter((m): m is Extract<ServerMsg, { type: 'winch' }> => m.type === 'winch');
+
+  it('hooks a teammate, tells everyone, and drains the team battery like a boost', () => {
+    const room = crew();
+    const r = room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    for (const conn of ['c1', 'c2']) expect(winches(r, conn)[0]).toMatchObject({ by: 'p1', on: true, target: 'p2' });
+    expect(room.battery.snapshot(1000).boosters).toBe(1);
+    expect(room.battery.snapshot(6000).level).toBeCloseTo(0.5, 2); // 5 s of reeling is half a battery
+  });
+
+  it('stopping gives the battery its refill back and tells everyone', () => {
+    const room = crew();
+    room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    const r = room.message('c1', { type: 'winch', op: 'stop' }, 3000);
+    expect(winches(r, 'c2')[0]).toMatchObject({ by: 'p1', on: false });
+    expect(room.battery.snapshot(3000).boosters).toBe(0);
+  });
+
+  it('only a Hauler has a winch', () => {
+    const room = crew();
+    const r = room.message('c2', { type: 'winch', op: 'start', target: 'p1' }, 1000);
+    expect(winches(r, 'c2')[0]).toMatchObject({ on: false });
+    expect(winches(r, 'c1')).toHaveLength(0);
+    expect(room.battery.snapshot(1000).boosters).toBe(0);
+  });
+
+  it('cannot hook yourself, a player who is not there, or a stake that is not there', () => {
+    const room = crew();
+    for (const target of ['p1', 'p4', 'o7']) {
+      const r = room.message('c1', { type: 'winch', op: 'start', target }, 1000);
+      expect(winches(r, 'c1')[0]).toMatchObject({ on: false });
+    }
+    expect(room.battery.snapshot(1000).boosters).toBe(0);
+  });
+
+  it('can hook a stake that has been put down, and lets go when the stake is picked up', () => {
+    const room = crew();
+    room.message('c2', { type: 'tool', op: 'drop', slot: 2, x: 500, z: 500, yaw: 0 }, 500); // a stake
+    const id = room.tools.placed[0]!.id;
+    expect(winches(room.message('c1', { type: 'winch', op: 'start', target: id }, 1000), 'c2')[0]).toMatchObject({ on: true, target: id });
+    const r = room.message('c2', { type: 'tool', op: 'pickup', id }, 2000);
+    expect(winches(r, 'c1')[0]).toMatchObject({ on: false, by: 'p1' });
+    expect(room.battery.snapshot(2000).boosters).toBe(0);
+  });
+
+  it('a beacon is not an anchor', () => {
+    const room = crew();
+    room.message('c2', { type: 'tool', op: 'drop', slot: 0, x: 500, z: 500, yaw: 0 }, 500); // a beacon
+    const r = room.message('c1', { type: 'winch', op: 'start', target: room.tools.placed[0]!.id }, 1000);
+    expect(winches(r, 'c1')[0]).toMatchObject({ on: false });
+  });
+
+  it('refuses when the battery is empty', () => {
+    const room = crew();
+    room.message('c2', { type: 'nitro', on: true }, 0);
+    room.battery.snapshot(11000); // ran dry
+    const r = room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 11000);
+    expect(winches(r, 'c1')[0]).toMatchObject({ on: false, reason: expect.stringMatching(/battery/i) });
+  });
+
+  it('hooking something new lets go of the old one, and only one drain is kept', () => {
+    const room = crew();
+    room.hello('c3', hello('Cy', 'key-cccccccc', 'relay'), 0);
+    room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    const r = room.message('c1', { type: 'winch', op: 'start', target: 'p3' }, 2000);
+    expect(winches(r, 'c2').map((m) => `${m.on}:${m.target ?? ''}`)).toEqual(['false:', 'true:p3']);
+    expect(room.battery.snapshot(2000).boosters).toBe(1);
+  });
+
+  it('turning into another car, the hooked player leaving, or the Hauler leaving, all let go', () => {
+    let room = crew();
+    room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    expect(winches(room.message('c1', { type: 'car', role: 'scout' }, 2000), 'c2').some((m) => !m.on)).toBe(true);
+    expect(room.battery.snapshot(2000).boosters).toBe(0);
+
+    room = crew();
+    room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    expect(winches(room.close('c2', 2000), 'c1').some((m) => !m.on && m.by === 'p1')).toBe(true);
+    expect(room.battery.snapshot(2000).boosters).toBe(0);
+
+    room = crew();
+    room.message('c1', { type: 'winch', op: 'start', target: 'p2' }, 1000);
+    expect(winches(room.close('c1', 2000), 'c2').some((m) => !m.on)).toBe(true);
+    expect(room.battery.snapshot(2000).boosters).toBe(0);
+  });
+});

@@ -278,6 +278,27 @@ check('plain GET to the socket route rejected (426)', noUpgrade.status === 426);
   for (const x of [p, q]) try { x.close(); } catch {}
 }
 
+// ---- the Hauler's winch, in a room of its own
+{
+  const wc = (await fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.json())).code;
+  const p = new Client(wc, 'Yara', 'hauler'); await p.hello(); await sleep(250);
+  const q = new Client(wc, 'Zed', 'scout'); await q.hello(); await sleep(250);
+  q.send({ type: 'winch', op: 'start', target: 'p1' }); await sleep(250);
+  check('a Scout has no winch, and only it is told', q.of('winch').some((m) => m.on === false && m.reason) && !p.of('winch').length);
+  p.send({ type: 'winch', op: 'start', target: 'p4' }); await sleep(250);
+  check('a winch cannot hook someone who is not there', !p.of('winch').some((m) => m.on === true));
+  p.send({ type: 'winch', op: 'start', target: 'p2' }); await sleep(300);
+  check('the Hauler hooks a teammate: everyone is told, and the team battery shows one drain', p.of('winch').some((m) => m.on && m.target === 'p2') && q.of('winch').some((m) => m.on && m.by === 'p1') && q.of('battery').at(-1).battery.boosters === 1);
+  await sleep(2000);
+  p.send({ type: 'winch', op: 'stop' }); await sleep(300);
+  const bat = q.of('battery').at(-1).battery;
+  check('stopping it tells everyone and the battery shows what it cost (about 20% for 2 s of reeling)', q.of('winch').some((m) => !m.on && m.by === 'p1' && !m.reason) && bat.boosters === 0 && bat.level < 900 && bat.level > 700, JSON.stringify(bat));
+  p.send({ type: 'winch', op: 'start', target: 'p2' }); await sleep(300);
+  q.close(); await sleep(400);
+  check('the winch lets go when the hooked player leaves, and the drain with it', p.of('winch').filter((m) => !m.on && !m.reason).length >= 2 && p.of('battery').at(-1).battery.boosters === 0);
+  try { p.close(); } catch {}
+}
+
 for (const x of [reload, c, d, other, b]) try { x.close(); } catch {}
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
