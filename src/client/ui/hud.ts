@@ -60,10 +60,10 @@ export class Hud {
       @keyframes sigblink{50%{opacity:.35}}
       .hud .gear{position:absolute;left:20px;bottom:190px;display:none;font-size:11px;font-weight:700;letter-spacing:.05em;background:#000a;padding:3px 10px;border-radius:999px;border:1px solid #fff4}
       .hud .gear.low{border-color:#ffd23f;color:#ffd23f}
-      .hud .team{position:absolute;left:20px;bottom:216px;display:none;flex-direction:column;gap:2px;font-size:11px;font-weight:600}
-      .hud .team span{background:#000a;padding:2px 9px;border-radius:999px;border:1px solid #fff3;width:max-content}
-      .hud .team span.weak{border-color:#ffc247;color:#ffc247}
-      .hud .team span.lost{border-color:#ff5a4d;color:#ff5a4d;animation:sigblink .8s steps(2) infinite}
+      .hud .teamlinks{position:absolute;left:20px;bottom:216px;display:none;flex-direction:column;gap:2px;font-size:11px;font-weight:600}
+      .hud .teamlinks span{background:#000a;padding:2px 9px;border-radius:999px;border:1px solid #fff3;width:max-content}
+      .hud .teamlinks span.weak{border-color:#ffc247;color:#ffc247}
+      .hud .teamlinks span.lost{border-color:#ff5a4d;color:#ff5a4d;animation:sigblink .8s steps(2) infinite}
       .hud .nitrolabel{position:absolute;left:20px;bottom:142px;font-size:11px;font-weight:600;letter-spacing:.04em;opacity:.9;display:none}
       .hud .nitro.run i{background:linear-gradient(90deg,#ffd23f,#fff3b0)}
       .hud .prompt{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);font-size:15px;font-weight:600;background:#000a;padding:7px 16px;border-radius:999px;display:none}
@@ -84,7 +84,7 @@ export class Hud {
     this.nitroBar.append(this.nitroFill);
     this.nitroLabel.className = 'nitrolabel';
     this.gearBox.className = 'gear';
-    this.teamBox.className = 'team';
+    this.teamBox.className = 'teamlinks';
     this.signalBox.className = 'signal';
     const bars = document.createElement('span');
     bars.className = 'bars';
