@@ -44,6 +44,11 @@ export class RemoteCar {
     return this.shown;
   }
 
+  /** Their nitro is burning right now (for the trail). */
+  get nitroActive(): boolean {
+    return this.nitroAmount > 0.3;
+  }
+
   /** The other player's nitro started or stopped (told by the room). */
   setNitro(on: boolean): void {
     this.nitroOn = on;

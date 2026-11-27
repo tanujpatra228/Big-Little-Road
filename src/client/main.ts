@@ -36,6 +36,7 @@ import { CrawlController } from './game/crawl';
 import { ToolsController } from './game/tools';
 import { DeadSignalController } from './game/deadsignal';
 import { WinchController } from './game/winch';
+import { EffectsController } from './game/effects';
 import { MudController } from './game/mud';
 import { DEAD_CAR } from '../shared/goals';
 import { PlacedObjects } from './render/placed-objects';
@@ -327,6 +328,17 @@ async function boot(): Promise<void> {
   const tether = new TetherController({ scene, pw, terrain, net: () => net, vehicle: () => vehicle, role: () => role, remotes: () => remotes, audio });
   const signal = new SignalController({ scene, terrain, remotes: () => remotes, role: () => role, selfId: () => (net.status === 'on' ? net.selfId : 'me'), vehicle: () => vehicle, audio, beacons: () => toolsCtl.placed, nameOf: (id) => roster.get(id)?.name ?? 'A teammate' });
   const deadSignal = new DeadSignalController(scene, terrain);
+  const effects = new EffectsController({
+    scene,
+    camera,
+    terrain,
+    vehicle: () => vehicle,
+    role: () => role,
+    remotes: () => remotes,
+    viewHeight: () => stage.renderer.domElement.height,
+  });
+  autoQ.attachFx(effects);
+  perf.attachFx(effects);
   const winchCtl: WinchController = new WinchController({
     scene,
     net: () => net,
@@ -472,6 +484,7 @@ async function boot(): Promise<void> {
     rescue,
     missions,
     crawl,
+    effects,
     winch: winchCtl,
     mud,
     deadSignal,
@@ -539,6 +552,7 @@ async function boot(): Promise<void> {
     rescue.update(frame);
     missions.update(performance.now());
     crawl.update(frame);
+    effects.update(frame);
     winchCtl.update(performance.now());
     mud.update(frame);
     if (!(missions.running && missions.info?.id === 'mudbog')) mud.freedByWinchLatch = false;
@@ -586,9 +600,20 @@ async function boot(): Promise<void> {
       audioPanel.sync();
     }
     audio.horn(input.isDown('KeyH'));
-    if (vehicle.consumeHop()) audio.jump();
+    if (vehicle.consumeHop()) {
+      audio.jump();
+      const p = vehicle.body.translation();
+      effects.burst(p.x, p.z, vehicle.surface, 0.2);
+    }
     const hit = vehicle.consumeImpact();
-    if (hit) audio.impact(hit, vehicle.surface);
+    if (hit) {
+      audio.impact(hit, vehicle.surface);
+      // A landing throws up a ring of dust; a crash into something does not.
+      if (hit.vertical > 0.5) {
+        const p = vehicle.body.translation();
+        effects.burst(p.x, p.z, vehicle.surface, hit.intensity, vehicle.body.linvel().x, vehicle.body.linvel().z);
+      }
+    }
     audio.update(
       { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking, boost: vehicle.nitro.active ? vehicle.nitro.blend : 0 },
       frame,

@@ -13,16 +13,18 @@ export interface Rung {
   /** Multiplies the tier's own pixel ratio (1 = untouched). */
   pixelScale: number;
   flowers: boolean;
+  /** 0 to 1, how much of the dust, spray and tyre marks to draw. */
+  fx: number;
 }
 
 /** Level 0 is everything on. Each step costs less than the one before. */
 export const LADDER: readonly Rung[] = [
-  { tier: 'high', density: 1, pixelScale: 1, flowers: true },
-  { tier: 'low', density: 1, pixelScale: 1, flowers: true },
-  { tier: 'low', density: 0.7, pixelScale: 1, flowers: true },
-  { tier: 'low', density: 0.7, pixelScale: 0.85, flowers: true },
-  { tier: 'low', density: 0.45, pixelScale: 0.75, flowers: true },
-  { tier: 'low', density: 0.25, pixelScale: 0.65, flowers: false },
+  { tier: 'high', density: 1, pixelScale: 1, flowers: true, fx: 1 },
+  { tier: 'low', density: 1, pixelScale: 1, flowers: true, fx: 1 },
+  { tier: 'low', density: 0.7, pixelScale: 1, flowers: true, fx: 0.85 },
+  { tier: 'low', density: 0.7, pixelScale: 0.85, flowers: true, fx: 0.7 },
+  { tier: 'low', density: 0.45, pixelScale: 0.75, flowers: true, fx: 0.5 },
+  { tier: 'low', density: 0.25, pixelScale: 0.65, flowers: false, fx: 0.3 },
 ];
 
 export const MAX_LEVEL = LADDER.length - 1;

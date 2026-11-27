@@ -87,6 +87,8 @@ export class Vehicle {
   flippedFor = 0;
   grounded = 0;
   speed = 0;
+  /** The throttle the car got on its last step, -1 to 1 (for the dust). */
+  throttleNow = 0;
   /** True while the driver is braking or on the handbrake. Drives the brake lights. */
   braking = false;
   private velBefore = { x: 0, y: 0, z: 0 };
@@ -204,6 +206,7 @@ export class Vehicle {
     // Past the surface's speed limit (just drove onto sand): bleed speed off quickly.
     drag += clamp((Math.abs(fwdSpeed) / top - 1) * 3, 0, 3) * (this.grace > 0 ? MOMENTUM_GRACE_DRAG : 1);
     this.grace = Math.max(0, this.grace - dt);
+    this.throttleNow = input.throttle;
     this.braking = (input.throttle < -0.02 && fwdSpeed > 0.6) || input.handbrake;
     const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force * gear.power, top, reverseTop, spec.brakeForce, WHEELS, traction * this.driveScale, this.pulled);
     this.pulled = false;

@@ -42,7 +42,7 @@ describe('the ladder', () => {
 
   it('never asks for fewer than 0.6 pixels per CSS pixel', () => {
     for (const r of LADDER) expect(rungPixelRatio(r, 1)).toBeGreaterThanOrEqual(0.6);
-    expect(rungPixelRatio({ tier: 'low', density: 1, pixelScale: 0.1, flowers: true }, 1)).toBe(0.6);
+    expect(rungPixelRatio({ tier: 'low', density: 1, pixelScale: 0.1, flowers: true, fx: 1 }, 1)).toBe(0.6);
   });
 });
 
@@ -187,5 +187,16 @@ describe('ignores what is not a measurement', () => {
 describe('the numbers are sensible', () => {
   it('there is a gap between stepping down and stepping up, so it cannot flutter', () => {
     expect(UP_FPS - DOWN_FPS).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('effects on the ladder', () => {
+  it('every rung says how much of the dust and tyre marks to draw, and it only goes down', () => {
+    for (const r of LADDER) {
+      expect(r.fx).toBeGreaterThan(0);
+      expect(r.fx).toBeLessThanOrEqual(1);
+    }
+    for (let i = 1; i < LADDER.length; i++) expect(LADDER[i]!.fx).toBeLessThanOrEqual(LADDER[i - 1]!.fx);
+    expect(LADDER[0]!.fx).toBe(1);
   });
 });

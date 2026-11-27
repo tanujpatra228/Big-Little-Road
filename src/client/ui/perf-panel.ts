@@ -21,6 +21,7 @@ export class PerfPanel {
   private submit = 0;
   private shown = false;
   private autoBox: HTMLInputElement | null = null;
+  private fx: { enabled: boolean; setEnabled(on: boolean): void; stats(): string } | null = null;
   /** Pulls each control back in line with the real settings, so Auto's changes show on the panel. */
   private sync: Array<() => void> = [];
 
@@ -152,6 +153,29 @@ export class PerfPanel {
     if (show) this.toggle();
   }
 
+  /** Adds the dust and tyre marks to the panel: a switch for them and a count. */
+  attachFx(fx: { enabled: boolean; setEnabled(on: boolean): void; stats(): string }): void {
+    this.fx = fx;
+    const c = document.createElement('input');
+    c.type = 'checkbox';
+    c.checked = fx.enabled;
+    c.onchange = () => {
+      if (this.auto.enabled) {
+        this.auto.setEnabled(false);
+        if (this.autoBox) this.autoBox.checked = false;
+      }
+      fx.setEnabled(c.checked);
+    };
+    this.sync.push(() => {
+      if (document.activeElement !== c) c.checked = fx.enabled;
+    });
+    const l = document.createElement('label');
+    const t = document.createElement('span');
+    t.textContent = 'Dust, spray, tyre marks';
+    l.append(t, c);
+    this.root.insertBefore(l, this.root.querySelector('.hint'));
+  }
+
   toggle(): void {
     this.shown = !this.shown;
     this.root.classList.toggle('on', this.shown);
@@ -183,6 +207,7 @@ export class PerfPanel {
         `grass    ${String(Math.round(g.tufts / 1000)).padStart(4)} k tufts`,
         `pixels   ${px.toFixed(2)}x  ${Math.round(innerWidth * px)}x${Math.round(innerHeight * px)}`,
         `tier     ${this.stage.quality()}${this.stage.post() ? ' + effects' : ''}`,
+        `fx       ${this.fx ? (this.fx.enabled ? this.fx.stats() : 'off') : ''}`,
         `auto     ${this.auto.enabled ? `level ${this.auto.level}/${MAX_LEVEL}  grass ${Math.round(LADDER[this.auto.level]!.density * 100)}%` : 'off'}`,
       ].join('\n');
     }

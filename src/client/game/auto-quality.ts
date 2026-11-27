@@ -11,6 +11,7 @@ import type { Stage } from '../render/stage';
 export class AutoQualityController {
   private readonly q = new AutoQuality(0);
   private on: boolean;
+  private fx: { setScale(scale: number): void } | null = null;
 
   constructor(
     private readonly stage: Stage,
@@ -18,6 +19,12 @@ export class AutoQualityController {
   ) {
     this.on = !stage.pinned();
     if (this.on) this.apply(0);
+  }
+
+  /** The dust and tyre marks follow the ladder too. */
+  attachFx(fx: { setScale(scale: number): void }): void {
+    this.fx = fx;
+    fx.setScale(this.on ? LADDER[this.q.level]!.fx : 1);
   }
 
   get enabled(): boolean {
@@ -51,5 +58,6 @@ export class AutoQualityController {
     if (this.stage.quality() !== r.tier || (ratio ?? base) !== this.stage.pixelRatio()) this.stage.configure(r.tier, ratio);
     this.grass.setDensity(r.density);
     this.grass.setFlowers(r.flowers);
+    this.fx?.setScale(r.fx);
   }
 }
