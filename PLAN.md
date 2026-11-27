@@ -186,6 +186,6 @@ Follow section 0b. Right now:
 3. **Step 2:** built and verified in two browsers (`docs/features/rock-crawl.md`): Rock Crawl with split vision and low range.
 4. **Step 3:** built and verified in two browsers (`docs/features/toolbox.md`): placeable objects and the toolbox.
 5. **Step 4:** built and verified in two browsers (`docs/features/dead-signal.md`): Dead Signal, beacons as radio sources, the Relay's charge.
-6. **Step 5:** built, verifying in two browsers (`docs/features/winch-and-mud.md`): the winch, the mud trap, Mud Bog Rescue.
+6. **Step 5:** built and verified in two browsers (`docs/features/winch-and-mud.md`): the winch, the mud trap, Mud Bog Rescue.
 7. **Step 6:** particles (G4), then drift.
 3. Check the Big Little Road domain and trademark conflicts before any public asset ships (human, step 10 at the latest).
