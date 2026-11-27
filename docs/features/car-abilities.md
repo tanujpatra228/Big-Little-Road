@@ -20,6 +20,8 @@ Status: decisions made (defaults accepted). Jump and nitro are built and live. D
 
 ## Drift
 
+Status: built (`drift.md`). The pure rules are in `shared/drift.ts`; in a room it does not charge the team battery.
+
 Goal: hold a controlled slide that keeps speed, looks great, and rewards skill.
 
 - States: Grip, Drifting, Exit. Enter when speed is above 5 m/s and either the handbrake is tapped or steering is held hard past a slip threshold. Stay while slip angle is above about 10 degrees. Exit when slip angle falls below about 6 degrees or speed under 3.

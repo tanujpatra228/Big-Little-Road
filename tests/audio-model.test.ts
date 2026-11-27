@@ -88,6 +88,11 @@ describe('tyre and wind sound', () => {
     expect(squealGain(true, 15, Surface.Mud)).toBe(0);
     expect(squealGain(true, 3, Surface.Patio)).toBe(0);
     expect(squealGain(false, 15, Surface.Patio)).toBe(0);
+    // A slide squeals too, without braking, more the deeper it is, and not on soft ground or when slow.
+    expect(squealGain(false, 15, Surface.Patio, 0.8)).toBeGreaterThan(0.03);
+    expect(squealGain(false, 15, Surface.Patio, 0.8)).toBeGreaterThan(squealGain(false, 15, Surface.Patio, 0.2));
+    expect(squealGain(false, 15, Surface.Mud, 1)).toBe(0);
+    expect(squealGain(false, 3, Surface.Patio, 1)).toBe(0);
   });
 });
 

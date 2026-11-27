@@ -615,7 +615,7 @@ async function boot(): Promise<void> {
       }
     }
     audio.update(
-      { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking, boost: vehicle.nitro.active ? vehicle.nitro.blend : 0 },
+      { role, speed: vehicle.speed, throttle: drive.throttle, surface: vehicle.surface, groundedWheels: vehicle.grounded, braking: vehicle.braking, slide: vehicle.driftOut.intensity, boost: vehicle.nitro.active ? vehicle.nitro.blend : 0 },
       frame,
     );
 

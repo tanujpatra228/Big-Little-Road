@@ -33,6 +33,11 @@ export class NitroTank {
     return this._active;
   }
 
+  /** A little charge from something the driver did well (a drift). Only the personal tank: the team battery is the room's. */
+  charge(amount: number): void {
+    this.level = Math.min(1, this.level + Math.max(0, amount));
+  }
+
   /** Full tank, no boost. */
   reset(): void {
     this.level = 1;

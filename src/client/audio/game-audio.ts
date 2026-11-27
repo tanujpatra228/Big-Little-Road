@@ -14,6 +14,8 @@ export interface AudioState {
   surface: Surface;
   groundedWheels: number;
   braking: boolean;
+  /** 0 to 1: how deep in a drift the car is. */
+  slide?: number;
   /** Nitro strength 0..1: raises the engine pitch and opens up the rushing sound. */
   boost?: number;
 }
@@ -373,7 +375,7 @@ export class GameAudio {
     this.crackleGain.gain.setTargetAtTime(tyre.crackle, t, 0.08);
     this.crackleSrc.playbackRate.setTargetAtTime(tyre.crackleRate, t, 0.1);
     this.windGainNode.gain.setTargetAtTime(windGain(s.speed), t, 0.12);
-    this.squealGainNode.gain.setTargetAtTime(squealGain(s.braking, s.speed, s.surface), t, 0.05);
+    this.squealGainNode.gain.setTargetAtTime(squealGain(s.braking, s.speed, s.surface, s.slide ?? 0), t, 0.05);
 
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {

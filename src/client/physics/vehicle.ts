@@ -1,10 +1,11 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { approach, clamp, driveCommand, steerAngle, type DriveInput } from '../../shared/driving';
 import type { CarSpec } from '../../shared/cars';
-import { resolveSurface, Surface } from '../../shared/surfaces';
+import { resolveSurface, Surface, SURFACE_PROPS } from '../../shared/surfaces';
 import { impactFromDelta, type Impact } from '../../shared/audio-model';
 import { NitroTank, boostFactor } from '../../shared/nitro';
 import { gearFactors, toggleGear, type Gear } from '../../shared/gear';
+import { DRIFT, DRIFT_BRAKE, DriftState, NO_DRIFT, slipAngle, type DriftOutput } from '../../shared/drift';
 import { RIGHTED_AT, rollRate } from '../../shared/rescue';
 import { JumpState, airLevel, jumpImpulse, jumpSpeed } from '../../shared/jump';
 import type { PhysicsWorld } from './world';
@@ -17,6 +18,8 @@ export const MOMENTUM_GRACE_SECONDS = 1.5;
 const MOMENTUM_GRACE_DRAG = 0.25;
 /** Tyre grip while a winch drags the car: low enough that a sideways pull slides it instead of holding it. */
 const LOOSE_GRIP = 0.12;
+/** A car faster than this is still in a slide even if its nose points away from where it is going. */
+const MIN_FWD_SLIDE = 5;
 
 export interface Pose {
   x: number; y: number; z: number;
@@ -87,6 +90,11 @@ export class Vehicle {
   flippedFor = 0;
   grounded = 0;
   speed = 0;
+  /** The handbrake drift: its state and what it asked of the tyres on the last step. */
+  readonly drift = new DriftState();
+  driftOut: DriftOutput = NO_DRIFT;
+  /** Signed slip angle on the last step (radians). */
+  slip = 0;
   /** The throttle the car got on its last step, -1 to 1 (for the dust). */
   throttleNow = 0;
   /** True while the driver is braking or on the handbrake. Drives the brake lights. */
@@ -177,6 +185,7 @@ export class Vehicle {
 
     // Average the wheel-contact surfaces so straddling a boundary blends.
     let grip = 0;
+    let rawGrip = 0; // the surface's own grip, before the car's affinity: whether a surface can be drifted on
     let drag = 0;
     let traction = 0;
     let speedFrac = 0;
@@ -185,6 +194,7 @@ export class Vehicle {
       const s = p ? this.pw.terrain.surfaceAt(p.x, p.z) : this.surface;
       const props = resolveSurface(s, spec.surfaces);
       grip += props.grip / WHEELS;
+      rawGrip += SURFACE_PROPS[s].grip / WHEELS;
       drag += props.drag / WHEELS;
       traction += props.traction / WHEELS;
       speedFrac += spec.surfaceSpeed[s] / WHEELS;
@@ -211,14 +221,40 @@ export class Vehicle {
     const cmd = driveCommand(input, fwdSpeed, spec.enginePower * boost.force * gear.power, top, reverseTop, spec.brakeForce, WHEELS, traction * this.driveScale, this.pulled);
     this.pulled = false;
 
+    // The drift: how the rear tyres and the front wheels behave while the car slides.
+    const lv = this.body.linvel();
+    const q0 = this.body.rotation();
+    const yaw0 = Math.atan2(2 * (q0.w * q0.y + q0.x * q0.z), 1 - 2 * (q0.y * q0.y + q0.z * q0.z));
+    const gspeed = Math.hypot(lv.x, lv.z);
+    this.slip = gspeed > 1 ? slipAngle(lv.x, lv.z, yaw0) : 0;
+    const dr = this.drift.update(dt, {
+      role: spec.role,
+      speed: gspeed,
+      slip: this.slip,
+      steer: input.steer,
+      handbrake: input.handbrake,
+      grounded: this.grounded >= 3,
+      surfaceGrip: rawGrip,
+      forward: fwdSpeed > 0.5 || (gspeed > MIN_FWD_SLIDE && Math.abs(this.slip) < 2.2),
+    });
+    this.driftOut = dr;
+    if (dr.yawDamp > 0 || dr.yawAccel !== 0) {
+      const w = this.body.angvel();
+      this.body.setAngvel({ x: w.x, y: w.y * Math.exp(-dr.yawDamp * dt) + dr.yawAccel * dt, z: w.z }, true);
+    }
+    drag *= dr.dragScale;
+    // Alone, a good drift charges the personal nitro tank (in a room the team battery is the room's).
+    if (this.drift.active && !this.nitroSource?.()) this.nitro.charge(dt * DRIFT[spec.role].charge * dr.intensity);
+
     for (let i = 0; i < WHEELS; i++) {
       const front = i < 2;
       // Rapier steers toward +x for positive angles; facing +z that is the driver's left.
-      this.ctrl.setWheelSteering(i, front ? -this.steerCmd : 0);
+      this.ctrl.setWheelSteering(i, front ? -(this.steerCmd * dr.steerScale + dr.assist) : 0);
       this.ctrl.setWheelEngineForce(i, cmd.engine);
-      this.ctrl.setWheelBrake(i, cmd.brake);
-      const rearSlide = !front && input.handbrake ? 0.45 : 1;
+      this.ctrl.setWheelBrake(i, this.drift.active ? cmd.brake * DRIFT_BRAKE : cmd.brake);
+      const rearSlide = front ? 1 : dr.rearGrip;
       this.ctrl.setWheelFrictionSlip(i, spec.frictionSlip * grip * rearSlide * (this.loose ? LOOSE_GRIP : 1));
+      this.ctrl.setWheelSideFrictionStiffness(i, spec.sideFriction * (front ? 1 : 0.35 + 0.65 * dr.rearGrip));
     }
 
     this.ctrl.updateVehicle(dt);

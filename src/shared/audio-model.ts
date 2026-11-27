@@ -112,11 +112,15 @@ export function windGain(speed: number): number {
   return Math.pow(clamp(Math.abs(speed) / 24, 0, 1), 1.6) * 0.18;
 }
 
-/** Tyre squeal under hard braking, loud on hard ground, silent on soft. */
-export function squealGain(braking: boolean, speed: number, surface: Surface): number {
-  if (!braking || Math.abs(speed) < 5) return 0;
+/**
+ * Tyre squeal under hard braking or in a slide (`slide` is 0 to 1, how deep), loud on hard ground, silent
+ * on soft. A slide is a little louder than braking, and rises with how far sideways the car is.
+ */
+export function squealGain(braking: boolean, speed: number, surface: Surface, slide = 0): number {
+  if ((!braking && slide <= 0.05) || Math.abs(speed) < 5) return 0;
   const bite = SURFACE_HARDNESS[surface] > 0.5 ? 0.06 : surface === Surface.Grass ? 0.015 : 0;
-  return bite * clamp(Math.abs(speed) / 14, 0, 1);
+  const braked = braking ? 1 : 0;
+  return bite * clamp(Math.abs(speed) / 14, 0, 1) * Math.max(braked, 0.5 + 0.7 * clamp(slide, 0, 1));
 }
 
 /** 0 is soft (water, mud, sand), 1 is hard (rock). Shapes impact sounds. */
